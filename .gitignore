@@ -4,3 +4,4 @@
 supabase/seed-privado.sql
 fotos/
 node_modules/
+supabase/.temp/
