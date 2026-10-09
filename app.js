@@ -1,7 +1,8 @@
 // Roleta do Rolê — telas e fluxo. O banco decide tudo (sorteio, vez, segredo); aqui é só a experiência.
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
-import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js";
-import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js";
+// O ?v= força o celular a baixar a versão nova depois de cada publicação (o GitHub Pages guarda cache por 10 min).
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=2";
+import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=2";
+import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=2";
 
 const app = document.getElementById("app");
 const CHAVE_SESSAO = "roleta.sessao";
@@ -42,8 +43,9 @@ const comSessao = (fn, extra = {}) => rpc(fn, { p_token: est.sessao?.token, ...e
 
 function trocarTela(...conteudo) {
   const trocar = () => { app.replaceChildren(...conteudo); window.scrollTo({ top: 0 }); };
-  if (document.startViewTransition && !movimentoReduzido()) document.startViewTransition(trocar);
-  else trocar();
+  if (!document.startViewTransition || movimentoReduzido() || document.visibilityState !== "visible") return trocar();
+  const transicao = document.startViewTransition(trocar);
+  transicao.ready.catch(() => { /* animação abortada pelo navegador: a tela já foi trocada */ });
 }
 
 const entra = (el, i) => { el.classList.add("entra"); el.style.setProperty("--i", i); return el; };
