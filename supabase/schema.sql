@@ -426,9 +426,9 @@ declare eu smallint := _sessao(p_token);
 begin
   if eu <> 1 then raise exception 'so_kevin'; end if;
   if p_comeca not in (1, 2) then raise exception 'jogador_invalido'; end if;
-  delete from avaliacoes;
-  delete from rodadas;
-  delete from vetos;
+  delete from avaliacoes where true;  -- "where true": o Supabase bloqueia delete sem where (safeupdate)
+  delete from rodadas where true;
+  delete from vetos where true;
   update lugares set ativo = true, fechado_em = null, fechado_por = null where fechado_por is not null;
   update config set vez = p_comeca where id = 1;
   return painel(p_token);
