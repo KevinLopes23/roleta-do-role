@@ -234,7 +234,7 @@ test("lugar fechado: tira da roleta, sorteia outro sem gastar troca, até 3 veze
   await rpc("lugar_fechado", kevin);
   await rpc("lugar_fechado", kevin);
   await falha(rpc("lugar_fechado", kevin), "sem_fechados");
-  await db.exec("update lugares set ativo = true, fechado_em = null; delete from lugares where id like 'extra-%'");
+  await db.exec("delete from rodadas; update lugares set ativo = true, fechado_em = null; delete from lugares where id like 'extra-%'");
   await db.exec("update lugares set ativo = false where id = 'inativo'");
 });
 
