@@ -40,14 +40,15 @@ const executar = (query) => api(`/projects/${ref()}/database/query`, { method: "
 async function criar() {
   const existente = lerEnv().SUPABASE_PROJECT_REF;
   if (existente) return console.log("Projeto já existe:", existente);
-  const orgs = await api("/organizations");
-  if (!orgs.length) throw new Error("Nenhuma organização na conta do Supabase");
+  // Tokens com escopo restrito não listam organizações: aceita SUPABASE_ORG_ID no .env.local.
+  const org = lerEnv().SUPABASE_ORG_ID || (await api("/organizations"))[0]?.id;
+  if (!org) throw new Error("Nenhuma organização encontrada: coloque SUPABASE_ORG_ID no .env.local");
   const projeto = await api("/projects", {
     method: "POST",
-    body: JSON.stringify({ name: "roleta-do-role", organization_id: orgs[0].id, region: "sa-east-1", db_pass: randomBytes(18).toString("base64url") }),
+    body: JSON.stringify({ name: "roleta-do-role", organization_id: org, region: "sa-east-1", db_pass: randomBytes(18).toString("base64url") }),
   });
   appendFileSync(ENV, `\nSUPABASE_PROJECT_REF=${projeto.id}\n`);
-  console.log(`Projeto criado na organização "${orgs[0].name}": ${projeto.id} (leva uns 2 min pra ficar pronto)`);
+  console.log(`Projeto criado: ${projeto.id} (leva uns 2 min pra ficar pronto)`);
 }
 
 async function status() {
