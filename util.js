@@ -79,6 +79,7 @@ const MENSAGENS = {
   vetos_demais: "No máximo 3 vetos.",
   veto_invalido: "Esse tipo de rolê não existe.",
   foto_invalida: "Não deu pra usar essa foto. Tenta outra.",
+  so_kevin: "Só o Kevin pode resetar.",
   data_invalida: "Escolha um dia de hoje até daqui 2 meses.",
   foto_ilegivel: "Não consegui abrir essa foto. Tenta outra (JPG ou da galeria).",
 };

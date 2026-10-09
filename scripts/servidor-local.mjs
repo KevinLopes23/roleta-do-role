@@ -10,7 +10,7 @@ import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 const RAIZ = fileURLToPath(new URL("../", import.meta.url));
 const PORTA = Number(process.argv[2]) || 5173;
 const TIPOS = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".webmanifest": "application/manifest+json" };
-const FUNCOES = new Set(["jogadores_publico", "reivindicar", "entrar", "painel", "girar", "regirar", "recado", "concluir", "cancelar", "sair", "lugar_fechado", "avaliar", "vetos_salvar", "foto_salvar", "foto"]);
+const FUNCOES = new Set(["jogadores_publico", "reivindicar", "entrar", "painel", "girar", "regirar", "recado", "concluir", "cancelar", "sair", "lugar_fechado", "avaliar", "vetos_salvar", "foto_salvar", "foto", "resetar_tudo"]);
 
 const db = await PGlite.create({ extensions: { pgcrypto } });
 await db.exec("create schema extensions; create role anon nologin; create role authenticated nologin;");

@@ -324,6 +324,29 @@ test("a roleta só aparece pro outro depois que o rolê é confirmado", async ()
   assert.ok((await rpc("girar", ela)).minha_rodada, "depois do rolê feito, a vez é dela");
 });
 
+test("resetar tudo: só o Kevin, apaga o jogo e mantém logins, PINs e lugares da curadoria", async () => {
+  await reiniciarJogo();
+  await db.exec("delete from vetos; update lugares set ativo = true, fechado_em = null, fechado_por = null where id <> 'inativo'");
+  const { kevin, ela } = await criarCasal();
+  await rpc("girar", kevin);
+  const fechadoPorJogador = (await rpc("painel", kevin)).minha_rodada.lugar.id;
+  await rpc("lugar_fechado", kevin);
+  await db.exec("update lugares set ativo = false, fechado_em = now() where id = 'caro-jau'");
+  await rpc("concluir", kevin, 150);
+  await rpc("vetos_salvar", ela, ["pesca"]);
+  await falha(rpc("resetar_tudo", ela, 1), "so_kevin");
+  const p = await rpc("resetar_tudo", kevin, 2);
+  assert.equal(p.vez, 2);
+  assert.equal(p.historico.length, 0);
+  assert.equal(Number(p.gastos["1"]), 0);
+  assert.equal((await one("select count(*)::int n from vetos")).n, 0);
+  assert.equal((await one("select ativo from lugares where id = $1", [fechadoPorJogador])).ativo, true, "fechado pelo jogador volta");
+  assert.equal((await one("select ativo from lugares where id = 'caro-jau'")).ativo, false, "tirado na curadoria continua fora");
+  assert.ok((await rpc("entrar", 2, "987654")).token, "PIN continua valendo");
+  assert.ok((await rpc("painel", ela)).eu, "sessão continua valendo");
+  await db.exec("update lugares set ativo = true, fechado_em = null where id = 'caro-jau'");
+});
+
 test("sair invalida o token", async () => {
   await reiniciarJogo();
   const { kevin } = await criarCasal();

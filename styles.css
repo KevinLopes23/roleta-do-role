@@ -378,3 +378,5 @@ img { max-width: 100%; display: block; }
 .contagem.sem-data { background: rgba(255, 255, 255, 0.03); border-style: dashed; }
 .contagem.sem-data .contagem-titulo { font-weight: 600; color: var(--texto-2); }
 .campo input[type="date"] { min-height: 48px; }
+.perigo summary { color: #ff9dbb; }
+.perigo-btn { border-color: rgba(255, 93, 143, 0.5); color: #ff9dbb; width: 100%; margin-bottom: 12px; }

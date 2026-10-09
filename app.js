@@ -1,12 +1,13 @@
 // Roleta do Rolê — telas e fluxo. O banco decide tudo (sorteio, vez, segredo); aqui é só a experiência.
 // O ?v= força o celular a baixar a versão nova depois de cada publicação (o GitHub Pages guarda cache por 10 min).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=7";
-import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido, notaCoracoes, comprimirFoto } from "./componentes.js?v=7";
-import { brl, lerValor, dataCurta, primeiroNome, mensagemErro, contagemRole, dataCampo } from "./util.js?v=7";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=8";
+import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido, notaCoracoes, comprimirFoto } from "./componentes.js?v=8";
+import { brl, lerValor, dataCurta, primeiroNome, mensagemErro, contagemRole, dataCampo } from "./util.js?v=8";
 
 const app = document.getElementById("app");
 const CHAVE_SESSAO = "roleta.sessao";
 const ATUALIZA_MS = 30000;
+const VERSAO = 8; // igual ao versao.json: quando ele sobe, o app recarrega sozinho
 const est = { sessao: lerLocal(CHAVE_SESSAO), painel: null, assinatura: "", ocupado: false };
 
 // ---------------------------------------------------------------- infraestrutura
@@ -184,6 +185,7 @@ function mostrarPainel(p, comTransicao = false) {
     blocoVeto(p),
     blocoContador(p),
     blocoRegras(),
+    p.eu === 1 && blocoReset(),
   ].filter(Boolean).map((b, i) => (comTransicao ? entra(b, i) : b));
   const tela = h("section", { class: "tela" }, blocos);
   if (comTransicao) trocarTela(tela); else app.replaceChildren(tela);
@@ -485,6 +487,35 @@ function blocoRegras() {
       h("li", {}, "A contagem regressiva até o dia marcado aparece no bilhete e no envelope. A roleta do outro só aparece depois do rolê confirmado.")));
 }
 
+// ---------------------------------------------------------------- resetar tudo (só o Kevin)
+
+function blocoReset() {
+  return h("details", { class: "regras perigo" },
+    h("summary", {}, "Resetar tudo"),
+    h("p", { class: "busca-texto" }, "Apaga sorteios, histórico, fotos, notas, vetos e gastos. Os logins, os PINs e os lugares continuam."),
+    h("button", { class: "btn fantasma perigo-btn", type: "button", onclick: folhaReset }, "Resetar tudo…"));
+}
+
+function folhaReset() {
+  let fechar = () => {};
+  const resetar = (comeca) => {
+    const botao = h("button", { class: comeca === 2 ? "btn rosa" : "btn neon", type: "button" }, comeca === 2 ? "Resetar e a Mariana começa" : "Resetar e eu começo");
+    botao.addEventListener("click", () => acao(botao, async () => {
+      const novo = await comSessao("resetar_tudo", { p_comeca: comeca });
+      fechar();
+      toast("Tudo zerado. Bora de novo ♥");
+      mostrarPainel(novo, true);
+    }));
+    return botao;
+  };
+  fechar = folha([
+    h("h2", {}, "Resetar tudo?"),
+    h("p", {}, "Some tudo do jogo: sorteios, histórico, fotos do álbum, notas, vetos e gastos. Isso não dá pra desfazer. Os logins e os PINs de vocês continuam iguais."),
+    h("div", { class: "acoes" }, resetar(2), resetar(1)),
+    h("button", { class: "btn fantasma", type: "button", onclick: () => fechar() }, "Voltar"),
+  ]);
+}
+
 // ---------------------------------------------------------------- folhas
 
 function folhaConcluir(outro) {
@@ -549,6 +580,16 @@ async function atualizarSilencioso() {
   } catch { /* tenta de novo no próximo ciclo */ }
 }
 
+// Atualização automática: o iPhone (e o app da tela de início) guarda cache; o versao.json nunca vem do cache.
+async function conferirVersao() {
+  try {
+    const resp = await fetch(`versao.json?t=${Date.now()}`, { cache: "no-store" });
+    const { v } = await resp.json();
+    if (Number(v) > VERSAO) location.replace(`${location.pathname}?v=${v}`);
+  } catch { /* sem rede: segue com a versão atual */ }
+}
+
 setInterval(atualizarSilencioso, ATUALIZA_MS);
-document.addEventListener("visibilitychange", atualizarSilencioso);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferirVersao(); atualizarSilencioso(); });
+conferirVersao();
 iniciar();

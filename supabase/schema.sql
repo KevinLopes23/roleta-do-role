@@ -69,7 +69,8 @@ create table if not exists public.rodadas (
 );
 alter table public.rodadas add column if not exists fechados int not null default 0;  -- trocas por "lugar fechado"
 alter table public.lugares add column if not exists fechado_em timestamptz;            -- marcado como fechado por um jogador
-alter table public.lugares add column if not exists verificado_em date;  -- último sinal de atividade conferido (Instagram/site)
+alter table public.lugares add column if not exists verificado_em date;
+alter table public.lugares add column if not exists fechado_por smallint references public.jogadores(id);  -- quem marcou "lugar fechado" (null = tirado na curadoria)  -- último sinal de atividade conferido (Instagram/site)
 create unique index if not exists rodadas_uma_aberta on public.rodadas (quem_leva) where status = 'sorteado';
 
 create table if not exists public.sessoes (
@@ -363,7 +364,7 @@ declare eu smallint := _sessao(p_token); r rodadas; v text;
 begin
   select * into r from rodadas where quem_leva = eu and status = 'sorteado' for update;
   if r.id is null then raise exception 'sem_rodada'; end if;
-  update lugares set ativo = false, fechado_em = now() where id = r.lugar_id;
+  update lugares set ativo = false, fechado_em = now(), fechado_por = eu where id = r.lugar_id;
   v := _sortear(eu, r.lugar_id);
   if v is null then raise exception 'sem_outro'; end if;
   update rodadas set lugar_id = v, fechados = fechados + 1 where id = r.id;
@@ -417,6 +418,22 @@ begin
   return (select foto from rodadas where id = p_rodada and status = 'feito');
 end $$;
 
+-- Resetar tudo (só o Kevin): apaga sorteios, histórico, fotos, notas, vetos e gastos; mantém logins, PINs e lugares.
+-- Lugares marcados como fechados pelos jogadores voltam; os tirados na curadoria continuam fora.
+create or replace function public.resetar_tudo(p_token text, p_comeca smallint) returns json
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare eu smallint := _sessao(p_token);
+begin
+  if eu <> 1 then raise exception 'so_kevin'; end if;
+  if p_comeca not in (1, 2) then raise exception 'jogador_invalido'; end if;
+  delete from avaliacoes;
+  delete from rodadas;
+  delete from vetos;
+  update lugares set ativo = true, fechado_em = null, fechado_por = null where fechado_por is not null;
+  update config set vez = p_comeca where id = 1;
+  return painel(p_token);
+end $$;
+
 -- Cancelar: o sorteio some e a pessoa gira de novo (sem limite de giros, a pedido do casal).
 create or replace function public.cancelar(p_token text) returns json
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -438,7 +455,7 @@ revoke all on function public._sessao(text), public._nova_sessao(smallint), publ
   public._disponiveis(text), public._sortear(smallint, text), public._trocas_herdadas(smallint), public._grupo(text, text), public._lugar_grupo() from public, anon, authenticated;
 revoke all on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text, date),
-  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) from public, authenticated;
+  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.resetar_tudo(text, smallint), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) from public, authenticated;
 grant execute on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text, date),
-  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) to anon;
+  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.resetar_tudo(text, smallint), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) to anon;
