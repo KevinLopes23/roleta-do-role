@@ -245,6 +245,69 @@ test("seed de lugares não reativa lugar marcado como fechado", async () => {
   await db.exec("update lugares set ativo = true, fechado_em = null where id = 'medio-bauru'");
 });
 
+test("grupo do lugar é preenchido pela categoria", async () => {
+  const g = async (cat, nome = "x") => (await one("select _grupo($1, $2) as g", [cat, nome])).g;
+  assert.equal(await g("Japonês e chinês"), "japones");
+  assert.equal(await g("Pesqueiro"), "pesca");
+  assert.equal(await g("Bar com música ao vivo"), "bar");
+  assert.equal(await g("Cervejaria"), "cervejaria_vinho");
+  assert.equal(await g("Cachoeira"), "natureza");
+  assert.equal(await g("Café da manhã"), "cafe_doces");
+  assert.equal(await g(null, "Zzz"), "outros");
+  await db.exec("insert into lugares (id, nome, cidade, categoria, preco) values ('sushi-teste','Sushi Teste','Bauru','Japonês',150)");
+  assert.equal((await one("select grupo from lugares where id = 'sushi-teste'")).grupo, "japones");
+  await db.exec("delete from lugares where id = 'sushi-teste'");
+});
+
+test("veto secreto: tira o grupo da roleta, máximo 3, e o outro não vê", async () => {
+  await reiniciarJogo();
+  await db.exec("delete from vetos; update lugares set grupo = _grupo(categoria, nome)");
+  const { kevin, ela } = await criarCasal();
+  const antes = (await rpc("painel", ela)).disponiveis;
+  await db.exec("update lugares set categoria = 'Pesqueiro' where id = 'barato-bauru'");
+  const p = await rpc("vetos_salvar", kevin, ["pesca"]);
+  assert.deepEqual(p.meus_vetos, ["pesca"]);
+  assert.equal((await rpc("painel", ela)).disponiveis, antes - 1, "veto de um vale pros dois");
+  assert.deepEqual((await rpc("painel", ela)).meus_vetos, [], "o outro não vê o veto");
+  await falha(rpc("vetos_salvar", kevin, ["pesca", "bar", "pizza", "relax"]), "vetos_demais");
+  await falha(rpc("vetos_salvar", kevin, ["qualquer"]), "veto_invalido");
+  await rpc("vetos_salvar", kevin, []);
+  await db.exec("update lugares set categoria = null where id = 'barato-bauru'");
+});
+
+test("avaliação: nota de cada um, média no álbum, reprovado sai e nota alta volta mais cedo", async () => {
+  await reiniciarJogo();
+  await db.exec("delete from vetos");
+  const { kevin, ela } = await criarCasal();
+  const lugar = (await rpc("girar", kevin)).minha_rodada.lugar.id;
+  const p = await rpc("concluir", kevin, 100);
+  const rodada = p.historico[0].id;
+  await falha(rpc("avaliar", kevin, rodada, 6), "nota_invalida");
+  await rpc("avaliar", kevin, rodada, 5);
+  const visao = await rpc("avaliar", ela, rodada, 4);
+  assert.equal(visao.historico[0].minha_nota, 4);
+  assert.equal(Number(visao.historico[0].media), 4.5);
+  await db.query("update rodadas set feito_em = now() - interval '50 days' where id = $1", [rodada]);
+  assert.equal((await db.query("select count(*)::int n from _disponiveis() where id = $1", [lugar])).rows[0].n, 1, "média 4,5 volta depois de 45 dias");
+  await rpc("avaliar", kevin, rodada, 1);
+  await rpc("avaliar", ela, rodada, 2);
+  assert.equal((await db.query("select count(*)::int n from _disponiveis() where id = $1", [lugar])).rows[0].n, 0, "média ≤ 2 sai da roleta");
+});
+
+test("foto do rolê: só JPEG em data URL, só em rolê feito, carregada sob demanda", async () => {
+  await reiniciarJogo();
+  const { kevin, ela } = await criarCasal();
+  await rpc("girar", kevin);
+  const rodada = (await rpc("concluir", kevin, 80)).historico[0].id;
+  await falha(rpc("foto_salvar", ela, rodada, "data:image/png;base64,AAAA"), "foto_invalida");
+  await falha(rpc("foto_salvar", ela, rodada, "javascript:alert(1)"), "foto_invalida");
+  const p = await rpc("foto_salvar", ela, rodada, "data:image/jpeg;base64,/9j/AAAA");
+  assert.equal(p.historico[0].tem_foto, true);
+  assert.ok(!JSON.stringify(p).includes("/9j/AAAA"), "o painel não carrega a foto inteira");
+  assert.equal(await rpc("foto", kevin, rodada), "data:image/jpeg;base64,/9j/AAAA");
+  await falha(rpc("foto", "token-falso", rodada), "sessao_invalida");
+});
+
 test("sair invalida o token", async () => {
   await reiniciarJogo();
   const { kevin } = await criarCasal();

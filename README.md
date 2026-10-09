@@ -33,6 +33,12 @@ Aplicação web para casais sortearem encontros surpresa em Bauru-SP e região. 
 | Gangorra dos gastos | Mostra visualmente quanto cada um já gastou e quem está "devendo". |
 | Álbum de polaroids | Histórico dos encontros realizados, com local, data e valor. |
 | Trocas limitadas | Até 2 trocas por vez (girar de novo ou cancelar), sem brecha para sortear sem limite. |
+| Lugar fechado | "Lugar fechado? Rodar de novo" tira o lugar da roleta e sorteia outro sem gastar trocas (até 3 por rodada). |
+| Contagem regressiva | O rolê é no fim de semana seguinte ao sorteio; bilhete e envelope mostram quantos dias faltam. |
+| Avaliação | Cada um dá de 1 a 5 corações. Média ≤ 2 tira o lugar; média ≥ 4,5 faz ele voltar em 45 dias em vez de 76. |
+| Veto secreto | Cada um veta até 3 tipos de rolê, sem o outro ver; a roleta evita os vetos dos dois. |
+| Fotos no álbum | A foto do dia vira a polaroid. É comprimida no celular e carregada sob demanda. |
+| App no celular | Manifesto e ícones para "Adicionar à Tela de Início" no iPhone (abre em tela cheia). |
 | Trava de estoque | Com menos de `minimo_lugares` (padrão: 10) disponíveis, o giro é bloqueado e o site avisa que a roleta precisa ser abastecida. |
 | Acesso por PIN | Cada jogador tem um PIN próprio. Os perfis são ativados uma única vez por link de convite. |
 
@@ -65,7 +71,10 @@ Aplicação web para casais sortearem encontros surpresa em Bauru-SP e região. 
 | `reivindicar(jogador, nome, pin, convite)` | Ativa um perfil uma única vez e devolve um token de sessão. |
 | `entrar(jogador, pin)` | Login com PIN; devolve um token de sessão. |
 | `painel(token)` | Estado completo da tela do jogador (sem o lugar sorteado pelo outro). |
-| `girar` / `regirar` / `cancelar` / `recado` / `concluir` | Ciclo de vida de uma rodada. |
+| `girar` / `regirar` / `cancelar` / `lugar_fechado` / `recado` / `concluir` | Ciclo de vida de uma rodada. |
+| `avaliar(token, rodada, nota)` | Nota de 1 a 5 do jogador para um rolê feito. |
+| `vetos_salvar(token, grupos[])` | Substitui os vetos secretos do jogador (até 3). |
+| `foto_salvar(token, rodada, foto)` / `foto(token, rodada)` | Grava e lê a foto (JPEG em data URL, até ~300 KB) de um rolê feito. |
 | `sair(token)` | Encerra a sessão. |
 
 ## Segurança
@@ -203,6 +212,8 @@ A suíte roda o `schema.sql` num Postgres embutido (PGlite) e cobre:
    - `preco`: estimativa do total do casal, inteiro entre 20 e 600.
    - `distancia_km`: inteiro de 0 a 100.
    - `link`: só `https`.
+   - **Critério de inclusão:** só lugares com sinal de atividade recente (post no Instagram, site atualizado ou agenda dos últimos meses). Registre a conferência com `update lugares set verificado_em = current_date where id = '<id>'`.
+   - O grupo usado no veto secreto (`lugares.grupo`) é preenchido automaticamente a partir da categoria.
 
 2. Gere o seed e aplique (a operação é um *upsert*, então pode ser repetida):
 

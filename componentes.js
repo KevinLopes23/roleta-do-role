@@ -263,6 +263,41 @@ export function folha(conteudo) {
 
 export const folhaAberta = () => document.getElementById("camada").classList.contains("ativa");
 
+// ---------------------------------------------------------------- nota em corações
+
+/** Cinco corações clicáveis. `valor` 0–5; `aoEscolher(n)` recebe 1–5. */
+export function notaCoracoes(valor, aoEscolher, rotulo) {
+  const botoes = [1, 2, 3, 4, 5].map((n) => {
+    const b = h("button", { class: `nota-coracao ${n <= valor ? "on" : ""}`, type: "button", "aria-label": `${n} de 5`, "aria-pressed": String(n === valor) },
+      coracao(n <= valor ? "#ff5d8f" : "rgba(255,93,143,.25)", { width: "20" }));
+    b.addEventListener("click", (e) => { e.stopPropagation(); aoEscolher(n); });
+    return b;
+  });
+  return h("div", { class: "notas", role: "group", "aria-label": rotulo }, h("span", { class: "notas-rotulo" }, rotulo), h("div", { class: "notas-botoes" }, botoes));
+}
+
+// ---------------------------------------------------------------- foto do rolê
+
+const FOTO_LADO = 1000;
+const FOTO_MAX = 380000; // caracteres do data URL (o banco aceita até 400 mil)
+
+/** Reduz e comprime a foto no próprio celular: devolve um data URL JPEG pequeno. */
+export async function comprimirFoto(arquivo) {
+  let imagem;
+  try { imagem = await createImageBitmap(arquivo); }
+  catch { throw new Error("foto_ilegivel"); }
+  for (const [lado, qualidade] of [[FOTO_LADO, 0.78], [900, 0.68], [760, 0.6], [640, 0.55]]) {
+    const escala = Math.min(1, lado / Math.max(imagem.width, imagem.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(imagem.width * escala);
+    canvas.height = Math.round(imagem.height * escala);
+    canvas.getContext("2d").drawImage(imagem, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", qualidade);
+    if (dataUrl.length <= FOTO_MAX) return dataUrl;
+  }
+  throw new Error("foto_invalida");
+}
+
 // ---------------------------------------------------------------- teclado de PIN
 
 const PIN_MIN = 6;

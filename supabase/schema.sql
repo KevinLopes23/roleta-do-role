@@ -69,6 +69,7 @@ create table if not exists public.rodadas (
 );
 alter table public.rodadas add column if not exists fechados int not null default 0;  -- trocas por "lugar fechado"
 alter table public.lugares add column if not exists fechado_em timestamptz;            -- marcado como fechado por um jogador
+alter table public.lugares add column if not exists verificado_em date;  -- último sinal de atividade conferido (Instagram/site)
 create unique index if not exists rodadas_uma_aberta on public.rodadas (quem_leva) where status = 'sorteado';
 
 create table if not exists public.sessoes (
@@ -81,8 +82,64 @@ alter table public.jogadores enable row level security;
 alter table public.config    enable row level security;
 alter table public.lugares   enable row level security;
 alter table public.rodadas   enable row level security;
-alter table public.sessoes   enable row level security;
-revoke all on public.jogadores, public.config, public.lugares, public.rodadas, public.sessoes from anon, authenticated;
+alter table public.rodadas add column if not exists foto text;  -- foto do rolê (data URL JPEG, comprimida no celular)
+alter table public.lugares add column if not exists grupo text;  -- grupo para o veto secreto (preenchido por gatilho)
+
+-- Nota de 1 a 5 que cada um dá depois do rolê. Média ≤ 2 tira o lugar; média ≥ 4,5 faz ele voltar mais cedo.
+create table if not exists public.avaliacoes (
+  rodada_id uuid not null references public.rodadas(id) on delete cascade,
+  jogador   smallint not null references public.jogadores(id),
+  nota      smallint not null check (nota between 1 and 5),
+  primary key (rodada_id, jogador)
+);
+
+-- Veto secreto: até 3 grupos que cada um não quer; a roleta evita os grupos vetados por qualquer um dos dois.
+create table if not exists public.vetos (
+  jogador smallint not null references public.jogadores(id),
+  grupo   text not null,
+  primary key (jogador, grupo)
+);
+
+alter table public.sessoes    enable row level security;
+alter table public.avaliacoes enable row level security;
+alter table public.vetos      enable row level security;
+revoke all on public.jogadores, public.config, public.lugares, public.rodadas, public.sessoes, public.avaliacoes, public.vetos from anon, authenticated;
+
+-- Grupo do lugar a partir da categoria/nome (ordem importa: o primeiro que casar vence).
+create or replace function public._grupo(p_categoria text, p_nome text) returns text
+language sql immutable set search_path = pg_temp as $$
+  select case
+    when t ~ 'pesq|pesca' then 'pesca'
+    when t ~ 'japon|sushi|temaki|oriental|chin' then 'japones'
+    when t ~ 'pizz' then 'pizza'
+    when t ~ 'burger|hamburg|lanch' then 'hamburguer'
+    when t ~ 'arab|liban' then 'arabe'
+    when t ~ 'italian|massa|cantina' then 'italiano'
+    when t ~ 'churrasc|carne|steak|picanha|grill|parmegiana' then 'carnes'
+    when t ~ 'cervej|chope|chopp|bier|vinic|vinho|adega' then 'cervejaria_vinho'
+    when t ~ 'cafe|doce|confeit|gelat|sorvet|brunch|padaria|colonial' then 'cafe_doces'
+    when t ~ 'paintball|kart|tirolesa|trampolim|escape|boliche|aventura|airsoft|futebol' then 'aventura'
+    when t ~ 'cinema|teatro|museu|planet|observ' then 'cultura'
+    when t ~ 'spa|massag|day use|termas|aquat' then 'relax'
+    when t ~ 'cachoeir|trilha|natureza|praia|parque|orquid|fazenda|passeio|mirante|zoolog|ar livre' then 'natureza'
+    when t ~ 'bar|pub|boteco|lounge|drink|musica|cachac|balada' then 'bar'
+    else 'outros'
+  end
+  from (select translate(lower(coalesce(p_categoria, '') || ' ' || coalesce(p_nome, '')),
+        'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') as t) x
+$$;
+
+create or replace function public._lugar_grupo() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  new.grupo := _grupo(new.categoria, new.nome);
+  return new;
+end $$;
+
+drop trigger if exists lugares_grupo on public.lugares;
+create trigger lugares_grupo before insert or update of categoria, nome on public.lugares
+  for each row execute function public._lugar_grupo();
+update public.lugares set grupo = public._grupo(categoria, nome) where grupo is distinct from public._grupo(categoria, nome);
 
 -- ---------------------------------------------------------------- regras do jogo
 -- Faixa R$ 20–600, alvo base R$ 160, espalhamento 140, Bauru pesa 1,5x, bloqueio de 76 dias (~2,5 meses),
@@ -123,11 +180,20 @@ $$;
 
 create or replace function public._disponiveis(p_excluir text default null) returns setof public.lugares
 language sql stable security definer set search_path = public, pg_temp as $$
+  with notas as (
+    select r.lugar_id, avg(a.nota) as media
+      from avaliacoes a join rodadas r on r.id = a.rodada_id
+     group by r.lugar_id
+  )
   select l.* from lugares l
+    left join notas n on n.lugar_id = l.id
    where l.ativo and l.preco between 20 and 600
      and l.id is distinct from p_excluir
+     and coalesce(n.media, 5) > 2                                        -- reprovado pelo casal não volta
+     and coalesce(l.grupo, 'outros') not in (select grupo from vetos)    -- veto secreto de qualquer um dos dois
      and not exists (select 1 from rodadas r where r.lugar_id = l.id
-                      and (r.status = 'sorteado' or r.feito_em > now() - interval '76 days'))
+                      and (r.status = 'sorteado'
+                           or r.feito_em > now() - case when n.media >= 4.5 then interval '45 days' else interval '76 days' end))
 $$;
 
 -- Sorteio ponderado (Efraimidis–Spirakis): peso maior perto do preço-alvo e em Bauru.
@@ -226,8 +292,11 @@ begin
         'sorteado_em', minha.sorteado_em, 'lugar', row_to_json(l)) end,
     'rodada_dele', case when dele.id is null then null else json_build_object(
         'dica', dele.dica, 'quando', dele.quando, 'sorteado_em', dele.sorteado_em) end,
+    'meus_vetos', (select coalesce(json_agg(grupo order by grupo), '[]') from vetos where jogador = eu),
     'historico', coalesce((select json_agg(h order by h.feito_em desc) from (
-        select r.quem_leva, r.valor, r.feito_em, x.nome, x.cidade, x.categoria
+        select r.id, r.quem_leva, r.valor, r.feito_em, x.nome, x.cidade, x.categoria, r.foto is not null as tem_foto,
+               (select av.nota from avaliacoes av where av.rodada_id = r.id and av.jogador = eu) as minha_nota,
+               (select round(avg(av.nota), 1) from avaliacoes av where av.rodada_id = r.id) as media
           from rodadas r join lugares x on x.id = r.lugar_id
          where r.status = 'feito' order by r.feito_em desc limit 60) h), '[]')
   );
@@ -298,6 +367,53 @@ begin
   return painel(p_token);
 end $$;
 
+-- Avaliação depois do rolê: cada um dá (ou muda) a sua nota de 1 a 5.
+create or replace function public.avaliar(p_token text, p_rodada uuid, p_nota int) returns json
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare eu smallint := _sessao(p_token);
+begin
+  if p_nota is null or p_nota not between 1 and 5 then raise exception 'nota_invalida'; end if;
+  if not exists (select 1 from rodadas where id = p_rodada and status = 'feito') then raise exception 'sem_rodada'; end if;
+  insert into avaliacoes (rodada_id, jogador, nota) values (p_rodada, eu, p_nota)
+    on conflict (rodada_id, jogador) do update set nota = excluded.nota;
+  return painel(p_token);
+end $$;
+
+-- Veto secreto: substitui os vetos do jogador (no máximo 3 grupos conhecidos).
+create or replace function public.vetos_salvar(p_token text, p_grupos text[]) returns json
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare eu smallint := _sessao(p_token); g text[] := coalesce(p_grupos, '{}');
+begin
+  if cardinality(g) > 3 then raise exception 'vetos_demais'; end if;
+  if exists (select 1 from unnest(g) x where x not in ('japones','pizza','hamburguer','arabe','italiano','carnes',
+      'cervejaria_vinho','cafe_doces','aventura','cultura','relax','natureza','bar','pesca')) then
+    raise exception 'veto_invalido';
+  end if;
+  delete from vetos where jogador = eu;
+  insert into vetos (jogador, grupo) select distinct eu, x from unnest(g) x;
+  return painel(p_token);
+end $$;
+
+-- Foto do rolê (qualquer um dos dois, só em rolê feito). Imagem JPEG já comprimida no celular, até ~300 KB.
+create or replace function public.foto_salvar(p_token text, p_rodada uuid, p_foto text) returns json
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare eu smallint := _sessao(p_token);
+begin
+  if p_foto is null or p_foto !~ '^data:image/jpeg;base64,[A-Za-z0-9+/=]+$' or length(p_foto) > 400000 then
+    raise exception 'foto_invalida';
+  end if;
+  update rodadas set foto = p_foto where id = p_rodada and status = 'feito';
+  if not found then raise exception 'sem_rodada'; end if;
+  return painel(p_token);
+end $$;
+
+create or replace function public.foto(p_token text, p_rodada uuid) returns text
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare eu smallint := _sessao(p_token);
+begin
+  return (select foto from rodadas where id = p_rodada and status = 'feito');
+end $$;
+
 -- Cancelar gasta uma troca (o próximo giro herda as trocas usadas): não dá pra burlar o limite.
 create or replace function public.cancelar(p_token text) returns json
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -317,10 +433,10 @@ $$;
 
 -- Só a API pública fica exposta (para anon); helpers internos e o papel authenticated, não.
 revoke all on function public._sessao(text), public._nova_sessao(smallint), public._gastos(), public._alvo(smallint),
-  public._disponiveis(text), public._sortear(smallint, text), public._trocas_herdadas(smallint) from public, anon, authenticated;
+  public._disponiveis(text), public._sortear(smallint, text), public._trocas_herdadas(smallint), public._grupo(text, text), public._lugar_grupo() from public, anon, authenticated;
 revoke all on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
-  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text) from public, authenticated;
+  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) from public, authenticated;
 grant execute on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
-  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text) to anon;
+  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) to anon;

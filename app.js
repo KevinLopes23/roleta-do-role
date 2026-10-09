@@ -1,8 +1,8 @@
 // Roleta do Rolê — telas e fluxo. O banco decide tudo (sorteio, vez, segredo); aqui é só a experiência.
 // O ?v= força o celular a baixar a versão nova depois de cada publicação (o GitHub Pages guarda cache por 10 min).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=5";
-import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=5";
-import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=5";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=6";
+import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido, notaCoracoes, comprimirFoto } from "./componentes.js?v=6";
+import { brl, lerValor, dataCurta, primeiroNome, mensagemErro, contagemRole } from "./util.js?v=6";
 
 const app = document.getElementById("app");
 const CHAVE_SESSAO = "roleta.sessao";
@@ -181,6 +181,7 @@ function mostrarPainel(p, comTransicao = false) {
     p.minha_rodada && blocoRecado(p),
     blocoGastos(p),
     blocoHistorico(p),
+    blocoVeto(p),
     blocoContador(p),
     blocoRegras(),
   ].filter(Boolean).map((b, i) => (comTransicao ? entra(b, i) : b));
@@ -287,6 +288,7 @@ function palcoBilhete(p, outro) {
 
   return h("section", { class: "palco", "aria-label": "Seu rolê secreto" },
     h("p", { class: "titulo-bloco" }, "seu rolê secreto"),
+    blocoContagem(r.sorteado_em),
     caixa,
     h("div", { class: "acoes" }, feito, regirar, cancelar),
     fechado);
@@ -324,7 +326,17 @@ function palcoEnvelope(p, outro) {
   });
   return h("section", { class: "palco", "aria-label": "Surpresa em andamento" },
     h("p", { class: "titulo-bloco rosa" }, `${primeiroNome(outro.nome)} já sorteou`),
+    blocoContagem(r.sorteado_em),
     envelope, legenda);
+}
+
+// Contagem regressiva: o rolê é no fim de semana seguinte ao sorteio.
+function blocoContagem(sorteadoEm) {
+  const c = contagemRole(sorteadoEm);
+  if (!c) return null;
+  return h("div", { class: `contagem ${c.dias <= 0 ? "hoje" : ""}`, role: "status" },
+    c.dias > 0 ? h("b", { class: "contagem-numero" }, String(c.dias)) : coracao("#ff5d8f", { width: "30" }),
+    h("div", {}, h("p", { class: "contagem-titulo" }, c.titulo), h("p", { class: "contagem-data" }, c.data)));
 }
 
 function palcoEsperando(outro) {
@@ -368,16 +380,92 @@ function blocoGastos(p) {
     h("p", { class: "veredito" }, veredito));
 }
 
+// Fotos do álbum são buscadas uma vez por rolê e guardadas na memória (o painel não carrega as imagens).
+const cacheFotos = new Map();
+
+function fotoDoRole(rodadaId, destino) {
+  const pintar = (src) => { if (src) destino.replaceChildren(h("img", { class: "foto-role", src, alt: "Foto do rolê" })); };
+  if (cacheFotos.has(rodadaId)) return pintar(cacheFotos.get(rodadaId));
+  comSessao("foto", { p_rodada: rodadaId })
+    .then((src) => { cacheFotos.set(rodadaId, src); pintar(src); })
+    .catch(() => { /* fica a inicial do lugar */ });
+}
+
+function botaoFoto(x) {
+  const input = h("input", { type: "file", accept: "image/*", hidden: true });
+  input.addEventListener("change", () => {
+    const arquivo = input.files?.[0];
+    if (!arquivo) return;
+    acao(null, async () => {
+      toast("Enviando a foto…");
+      const foto = await comprimirFoto(arquivo);
+      const novo = await comSessao("foto_salvar", { p_rodada: x.id, p_foto: foto });
+      cacheFotos.set(x.id, foto);
+      toast("Foto no álbum ♥");
+      mostrarPainel(novo);
+    });
+  });
+  return h("label", { class: "polaroid-add" }, input, x.tem_foto ? "trocar foto" : "+ foto");
+}
+
 function blocoHistorico(p) {
   const pessoa = (id) => p.jogadores.find((j) => j.id === id) || {};
-  const itens = (p.historico || []).map((x) => h("figure", { class: "polaroid", style: { margin: "0" } },
-    h("div", { class: "polaroid-foto" }, (x.nome || "?").charAt(0), pessoa(x.quem_leva).foto && h("img", { src: pessoa(x.quem_leva).foto, alt: "" })),
-    h("figcaption", {},
-      h("p", { class: "legenda-mao" }, x.nome),
-      h("p", { class: "meta" }, h("span", {}, `${primeiroNome(pessoa(x.quem_leva).nome)} levou · ${dataCurta(x.feito_em)}`), h("b", {}, brl(x.valor))))));
+  const itens = (p.historico || []).map((x) => {
+    const moldura = h("div", { class: "polaroid-foto" }, (x.nome || "?").charAt(0), pessoa(x.quem_leva).foto && h("img", { class: "polaroid-quem", src: pessoa(x.quem_leva).foto, alt: "" }));
+    if (x.tem_foto) fotoDoRole(x.id, moldura);
+    const avaliar = (nota) => acao(null, async () => mostrarPainel(await comSessao("avaliar", { p_rodada: x.id, p_nota: nota })));
+    return h("figure", { class: "polaroid", style: { margin: "0" } },
+      moldura,
+      h("figcaption", {},
+        h("p", { class: "legenda-mao" }, x.nome),
+        h("p", { class: "meta" }, h("span", {}, `${primeiroNome(pessoa(x.quem_leva).nome)} levou · ${dataCurta(x.feito_em)}`), h("b", {}, brl(x.valor))),
+        h("div", { class: "polaroid-nota" },
+          notaCoracoes(x.minha_nota || 0, avaliar, x.minha_nota ? "sua nota" : "dê sua nota"),
+          x.media && h("span", { class: "media" }, `média ${String(x.media).replace(".", ",")}`)),
+        botaoFoto(x)));
+  });
   return h("section", { class: "palco", "aria-label": "Rolês que já rolaram" },
     h("p", { class: "titulo-bloco" }, "nosso álbum"),
     itens.length ? h("div", { class: "carrossel" }, itens) : h("p", { class: "vazio" }, "Nenhum rolê ainda. A primeira polaroid aparece aqui depois do primeiro rolê."));
+}
+
+// ---------------------------------------------------------------- veto secreto
+
+const GRUPOS = [
+  ["japones", "Japonês"], ["pizza", "Pizza"], ["hamburguer", "Hambúrguer"], ["arabe", "Árabe"], ["italiano", "Italiano"],
+  ["carnes", "Carnes"], ["bar", "Bar e balada"], ["cervejaria_vinho", "Cervejaria e vinho"], ["cafe_doces", "Café e doces"],
+  ["aventura", "Aventura"], ["cultura", "Cinema e teatro"], ["relax", "Spa e piscina"], ["natureza", "Natureza"], ["pesca", "Pesca"],
+];
+const MAX_VETOS = 3;
+
+function blocoVeto(p) {
+  const escolhidos = new Set(p.meus_vetos || []);
+  const salvar = h("button", { class: "btn", type: "button", disabled: true }, "Salvar veto");
+  const contador = h("span", { class: "veto-contador" });
+  const atualizar = () => { contador.textContent = `${escolhidos.size}/${MAX_VETOS}`; };
+  const chips = GRUPOS.map(([id, rotulo]) => {
+    const chip = h("button", { class: `veto-chip ${escolhidos.has(id) ? "on" : ""}`, type: "button", "aria-pressed": String(escolhidos.has(id)) }, rotulo);
+    chip.addEventListener("click", () => {
+      if (escolhidos.has(id)) escolhidos.delete(id);
+      else if (escolhidos.size >= MAX_VETOS) { toast(`No máximo ${MAX_VETOS} vetos.`, true); return; }
+      else escolhidos.add(id);
+      chip.classList.toggle("on", escolhidos.has(id));
+      chip.setAttribute("aria-pressed", String(escolhidos.has(id)));
+      salvar.disabled = false;
+      atualizar();
+    });
+    return chip;
+  });
+  salvar.addEventListener("click", () => acao(salvar, async () => {
+    mostrarPainel(await comSessao("vetos_salvar", { p_grupos: [...escolhidos] }));
+    toast("Veto guardado. Só você sabe 🤫");
+  }));
+  atualizar();
+  return h("details", { class: "palco veto" },
+    h("summary", {}, h("span", { class: "titulo-bloco" }, "meu veto secreto"), contador),
+    h("p", { class: "busca-texto" }, "Marque até 3 tipos de rolê que você não curte. Só você vê, e a roleta evita o que qualquer um dos dois vetar."),
+    h("div", { class: "veto-chips" }, chips),
+    salvar);
 }
 
 function blocoRegras() {
@@ -390,7 +478,9 @@ function blocoRegras() {
       h("li", {}, "Deixe um recado no envelope: a dica de roupa e o horário."),
       h("li", {}, "Depois do rolê, toque em \"Rolê feito\" e coloque quanto gastou. A vez passa."),
       h("li", {}, "A gangorra compara os gastos: quem gastou menos cai em rolês mais caros, até empatar."),
-      h("li", {}, "Lugar visitado só volta pra roleta depois de 2 meses e meio.")));
+      h("li", {}, "Lugar visitado só volta pra roleta depois de 2 meses e meio (1 mês e meio se a média for 4,5 ou mais)."),
+      h("li", {}, "Depois do rolê, cada um dá de 1 a 5 corações no álbum. Média 2 ou menos e o lugar não volta."),
+      h("li", {}, "O rolê é no fim de semana seguinte ao sorteio. A contagem aparece no bilhete e no envelope.")));
 }
 
 // ---------------------------------------------------------------- folhas
@@ -399,15 +489,20 @@ function folhaConcluir(outro) {
   const valor = h("input", { id: "valor", inputmode: "decimal", autocomplete: "off", placeholder: "0" });
   const confirmar = h("button", { class: "btn rosa", type: "submit" }, "Confirmar e passar a vez");
   let fechar = () => {};
+  let nota = 0;
+  const escolherNota = h("div", {});
+  const pintarNota = () => escolherNota.replaceChildren(notaCoracoes(nota, (n) => { nota = n; pintarNota(); }, "sua nota pro rolê"));
+  pintarNota();
   const enviar = (e) => {
     e.preventDefault();
     const v = lerValor(valor.value);
     if (v == null) { toast(mensagemErro("valor_invalido"), true); return; }
     acao(confirmar, async () => {
-      const novo = await comSessao("concluir", { p_valor: v });
+      let novo = await comSessao("concluir", { p_valor: v });
+      if (nota && novo.historico?.[0]?.id) novo = await comSessao("avaliar", { p_rodada: novo.historico[0].id, p_nota: nota });
       fechar();
       confete(40);
-      toast(`Rolê guardado no álbum! Agora é a vez de ${primeiroNome(outro.nome)}.`);
+      toast(`Rolê no álbum! Coloque uma foto do dia ♥ Agora é a vez de ${primeiroNome(outro.nome)}.`);
       mostrarPainel(novo, true);
     });
   };
@@ -415,6 +510,7 @@ function folhaConcluir(outro) {
     h("h2", {}, "Como foi?"),
     h("p", {}, `Coloque quanto você pagou no total. O lugar entra no álbum e a vez passa pra ${primeiroNome(outro.nome)}.`),
     h("label", { class: "valor-grande", for: "valor" }, h("span", {}, "R$"), valor),
+    escolherNota,
     h("div", { class: "acoes" }, confirmar, h("button", { class: "btn fantasma", type: "button", onclick: () => fechar() }, "Voltar")));
   fechar = folha(form);
 }
@@ -440,7 +536,7 @@ function podeAtualizar() {
   if (!est.sessao?.token || !est.painel || est.ocupado || folhaAberta()) return false;
   if (document.visibilityState !== "visible") return false;
   if (document.activeElement instanceof HTMLInputElement) return false;
-  return !document.querySelector(".raspa:not(.some), .envelope.aberto, .roda-caixa.girando");
+  return !document.querySelector(".raspa:not(.some), .envelope.aberto, .roda-caixa.girando, .veto[open]");
 }
 
 async function atualizarSilencioso() {

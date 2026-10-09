@@ -274,7 +274,37 @@ img { max-width: 100%; display: block; }
 .polaroid:nth-child(even) { --giro: 2.5deg; }
 .polaroid:hover { transform: rotate(0) translateY(-6px) scale(1.03); }
 .polaroid-foto { aspect-ratio: 1; border-radius: 2px; display: grid; place-items: center; background: linear-gradient(150deg, var(--vinho), #2a0f18); color: var(--neon-forte); font-family: var(--f-neon); font-size: 54px; text-shadow: var(--brilho-neon); position: relative; overflow: hidden; }
-.polaroid-foto img { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fbf6ee; object-fit: cover; }
+.polaroid-foto .polaroid-quem { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fbf6ee; object-fit: cover; }
+.polaroid-foto .foto-role { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: revela 0.8s var(--ease) both; }
+@keyframes revela { from { opacity: 0; filter: sepia(1) brightness(1.6); } }
+.polaroid-nota { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.polaroid-nota .media { font-size: 11px; color: #7a5a48; }
+.polaroid .notas-rotulo { color: #7a5a48; }
+.polaroid-add { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--vinho); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* nota em corações */
+.notas { display: flex; flex-direction: column; gap: 4px; }
+.notas-rotulo { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--texto-2); }
+.notas-botoes { display: flex; gap: 2px; }
+.nota-coracao { background: none; border: 0; padding: 4px; line-height: 0; border-radius: 8px; transition: transform 0.2s var(--mola); }
+.nota-coracao:hover, .nota-coracao:focus-visible { transform: scale(1.2); }
+.nota-coracao.on svg { filter: drop-shadow(0 0 4px rgba(255, 93, 143, 0.7)); }
+
+/* contagem regressiva do rolê */
+.contagem { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: var(--r-m); background: rgba(255, 93, 143, 0.08); border: 1px solid rgba(255, 93, 143, 0.35); }
+.contagem-numero { font-family: var(--f-num); font-weight: 500; font-size: 38px; line-height: 1; color: #ff9dbb; text-shadow: var(--brilho-rosa); min-width: 1.4ch; text-align: center; }
+.contagem-titulo { margin: 0; font-weight: 700; }
+.contagem-data { margin: 0; font-size: 12px; color: var(--texto-2); }
+.contagem.hoje { background: rgba(255, 207, 122, 0.1); border-color: rgba(255, 207, 122, 0.5); animation: bate 1.6s ease-in-out infinite; }
+
+/* veto secreto */
+.veto summary { list-style: none; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+.veto summary::-webkit-details-marker { display: none; }
+.veto-contador { font-family: var(--f-num); color: var(--texto-2); font-size: 13px; }
+.veto[open] summary { margin-bottom: 4px; }
+.veto-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.veto-chip { border: 1px solid var(--linha); background: rgba(255, 255, 255, 0.03); border-radius: 999px; padding: 8px 14px; font-size: 13px; color: var(--texto-2); transition: all 0.2s; }
+.veto-chip.on { background: rgba(122, 31, 61, 0.55); border-color: var(--rosa); color: var(--texto); text-decoration: line-through; text-decoration-color: rgba(255, 93, 143, 0.8); }
 .polaroid .legenda-mao { font-family: var(--f-mao); font-size: 22px; line-height: 1.05; margin: 10px 2px 2px; overflow-wrap: anywhere; }
 .polaroid .meta { font-size: 11px; color: #7a5a48; display: flex; flex-direction: column; gap: 2px; margin: 0; }
 .polaroid .meta b { font-family: var(--f-num); font-weight: 500; font-size: 13px; color: var(--vinho); white-space: nowrap; }
