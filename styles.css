@@ -287,6 +287,9 @@ img { max-width: 100%; display: block; }
 .busca .btn { padding: 10px 16px; font-size: 14px; }
 .busca-texto { margin: 0; font-size: 13px; color: var(--texto-2); }
 .busca-texto.fraco { opacity: 0.7; font-size: 12px; }
+.busca.alerta { border: 1px solid rgba(255, 93, 143, 0.6); background: rgba(122, 31, 61, 0.25); box-shadow: 0 0 30px -10px rgba(255, 93, 143, 0.6); }
+.busca.alerta .busca-numero b { color: #ff9dbb; }
+.busca.alerta .busca-texto:not(.fraco) { color: var(--texto); }
 
 /* como funciona */
 .regras { border-top: 1px solid var(--linha); padding-top: 4px; }

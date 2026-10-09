@@ -37,6 +37,7 @@ const MENSAGENS = {
   nao_e_sua_vez: "Agora é a vez do outro girar.",
   ja_sorteado: "Você já sorteou. Raspe o bilhete.",
   sem_lugares: "A roleta está vazia. Peça pro Claude buscar lugares novos.",
+  roleta_acabando: "A roleta está acabando. O Kevin precisa pedir lugares novos pro Claude antes do próximo giro.",
   sem_regiros: "Acabaram os giros extras dessa rodada.",
   sem_outro: "Não tem outra opção na roleta agora.",
   sem_rodada: "Não tem sorteio aberto.",

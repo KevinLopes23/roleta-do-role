@@ -1,8 +1,8 @@
 // Roleta do Rolê — telas e fluxo. O banco decide tudo (sorteio, vez, segredo); aqui é só a experiência.
 // O ?v= força o celular a baixar a versão nova depois de cada publicação (o GitHub Pages guarda cache por 10 min).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=3";
-import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=3";
-import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=3";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=4";
+import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=4";
+import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=4";
 
 const app = document.getElementById("app");
 const CHAVE_SESSAO = "roleta.sessao";
@@ -181,70 +181,25 @@ function mostrarPainel(p, comTransicao = false) {
     p.minha_rodada && blocoRecado(p),
     blocoGastos(p),
     blocoHistorico(p),
-    blocoBusca(p),
+    blocoContador(p),
     blocoRegras(),
   ].filter(Boolean).map((b, i) => (comTransicao ? entra(b, i) : b));
   const tela = h("section", { class: "tela" }, blocos);
   if (comTransicao) trocarTela(tela); else app.replaceChildren(tela);
-  acompanharBusca(p);
 }
 
-// ---------------------------------------------------------------- busca de lugares novos (Claude + pesquisa na web)
+// ---------------------------------------------------------------- lugares na roleta
 
-const MINIMO_LUGARES = 10;
-const ACOMPANHA_MS = 10000;
-let autoTentado = false;
-let timerBusca = null;
-let statusAnterior = null;
+const acabando = (p) => p.disponiveis < (p.minimo_lugares ?? 10);
 
-function blocoBusca(p) {
-  const g = p.geracao || {};
-  const buscando = g.status === "gerando";
-  const botao = h("button", { class: "btn", type: "button", disabled: buscando || !g.pode, onclick: () => buscarLugares(botao) },
-    buscando ? "Buscando…" : "Buscar lugares novos");
-  let texto;
-  if (buscando) texto = "O Claude está pesquisando lugares em Bauru e região. Leva uns 2 minutos.";
-  else if (!g.pode && g.liberada_em) texto = `Próxima busca liberada ${dataCurta(g.liberada_em)} às ${new Date(g.liberada_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.`;
-  else if (p.disponiveis < MINIMO_LUGARES) texto = "A roleta está acabando. A busca roda sozinha, mas você pode chamar agora.";
-  else texto = "Quando a roleta tiver menos de 10 lugares, a busca roda sozinha.";
-  return h("section", { class: "busca", "aria-label": "Lugares na roleta" },
-    h("div", { class: "busca-topo" },
-      h("p", { class: "busca-numero" }, h("b", {}, String(p.disponiveis)), " lugares na roleta"),
-      botao),
-    h("p", { class: "busca-texto" }, g.status === "erro" && g.msg ? g.msg : texto),
-    p.pool_atualizado_em && h("p", { class: "busca-texto fraco" }, `Atualizada em ${dataCurta(p.pool_atualizado_em)}${g.status === "parado" && g.msg ? ` · ${g.msg}` : ""}`));
-}
-
-async function buscarLugares(botao, automatico = false) {
-  if (botao) botao.disabled = true;
-  let resp;
-  try {
-    resp = await fetch(`${SUPABASE_URL}/functions/v1/gerar-lugares`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ token: est.sessao?.token }),
-    });
-  } catch {
-    if (!automatico) toast(mensagemErro("rede"), true);
-    return;
-  }
-  if (resp.status === 202) toast(automatico ? "A roleta estava acabando: buscando lugares novos…" : "Buscando lugares novos… leva uns 2 minutos.");
-  else if (!automatico) toast(resp.status === 429 ? "Já teve uma busca há pouco. Tenta mais tarde." : "Não deu pra buscar agora.", true);
-  atualizarSilencioso(true);
-}
-
-function acompanharBusca(p) {
-  const status = p.geracao?.status;
-  if (statusAnterior === "gerando" && status !== "gerando") {
-    toast(status === "erro" ? (p.geracao.msg || "A busca falhou.") : `${p.geracao.msg || "Roleta atualizada"} ♥`, status === "erro");
-  }
-  statusAnterior = status;
-  clearTimeout(timerBusca);
-  if (status === "gerando") timerBusca = setTimeout(() => atualizarSilencioso(true), ACOMPANHA_MS);
-  if (!autoTentado && p.geracao?.pode && p.disponiveis < MINIMO_LUGARES) {
-    autoTentado = true;
-    buscarLugares(null, true);
-  }
+function blocoContador(p) {
+  const texto = acabando(p)
+    ? "A roleta está acabando e o giro ficou travado. Kevin: peça pro Claude buscar lugares novos."
+    : "Lugar visitado volta pra roleta depois de 2 meses e meio.";
+  return h("section", { class: `busca ${acabando(p) ? "alerta" : ""}`, "aria-label": "Lugares na roleta" },
+    h("p", { class: "busca-numero" }, h("b", {}, String(p.disponiveis)), " lugares na roleta"),
+    h("p", { class: "busca-texto" }, texto),
+    p.pool_atualizado_em && h("p", { class: "busca-texto fraco" }, `Atualizada em ${dataCurta(p.pool_atualizado_em)}`));
 }
 
 function blocoTopo() {
@@ -285,7 +240,7 @@ function palcoRoleta(p, outro) {
   else if (deficit > 0) explicacao = [`Você gastou ${brl(deficit)} a menos que ${primeiroNome(outro.nome)}. A roleta puxa pra perto de `, h("b", {}, brl(p.alvo)), "."];
   else explicacao = [`Você gastou ${brl(-deficit)} a mais. A roleta pega mais leve, perto de `, h("b", {}, brl(p.alvo)), "."];
 
-  roda.botao.disabled = !p.disponiveis;
+  roda.botao.disabled = acabando(p);
   roda.botao.addEventListener("click", () => acao(roda.botao, async () => {
     const [novo] = await Promise.all([comSessao("girar"), roda.girar()]);
     roda.destruir();
@@ -297,7 +252,7 @@ function palcoRoleta(p, outro) {
     h("p", { class: "titulo-bloco" }, "sua vez de girar"),
     roda.el,
     h("div", { class: "chip-alvo" }, coracao("#ffcf7a", { width: "18" }), h("span", {}, explicacao)),
-    h("p", { class: "rodape-palco" }, p.disponiveis ? "Confere se ninguém está espiando a tela." : mensagemErro("sem_lugares")));
+    h("p", { class: "rodape-palco" }, acabando(p) ? mensagemErro("roleta_acabando") : "Confere se ninguém está espiando a tela."));
 }
 
 function palcoBilhete(p, outro) {
@@ -409,7 +364,7 @@ function blocoRegras() {
   return h("details", { class: "regras" },
     h("summary", {}, "Como funciona"),
     h("ol", {},
-      h("li", {}, "Quando a roleta está acabando, o Claude pesquisa lugares novos sozinho (ou toque em “Buscar lugares novos”)."),
+      h("li", {}, "Antes de acabar, o Kevin pede pro Claude atualizar a roleta. Com menos de 10 lugares o giro trava até lá."),
       h("li", {}, "Na sua vez, gire e raspe o bilhete. Só você vê o lugar."),
       h("li", {}, "Se não der (fechado, lotado), gire de novo até 2 vezes."),
       h("li", {}, "Deixe um recado no envelope: a dica de roupa e o horário."),
@@ -468,11 +423,8 @@ function podeAtualizar() {
   return !document.querySelector(".raspa:not(.some), .envelope.aberto, .roda-caixa.girando");
 }
 
-async function atualizarSilencioso(forcar = false) {
-  if (!podeAtualizar()) {
-    if (forcar && est.sessao?.token) { clearTimeout(timerBusca); timerBusca = setTimeout(() => atualizarSilencioso(true), ACOMPANHA_MS); }
-    return;
-  }
+async function atualizarSilencioso() {
+  if (!podeAtualizar()) return;
   try {
     const p = await comSessao("painel");
     if (JSON.stringify(p) !== est.assinatura && podeAtualizar()) mostrarPainel(p, true);
