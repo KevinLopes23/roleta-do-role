@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+import { lugaresParaSql } from "./gerar-seeds.mjs";
 
 const SCHEMA = readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
 const CONVITE = "convite-teste";
@@ -214,6 +215,34 @@ test("com menos lugares que o mínimo, a roleta trava o giro (mas não o sorteio
   } finally {
     await db.exec("update config set minimo_lugares = 0");
   }
+});
+
+test("lugar fechado: tira da roleta, sorteia outro sem gastar troca, até 3 vezes", async () => {
+  await reiniciarJogo();
+  await db.exec("update lugares set ativo = true, fechado_em = null where id <> 'inativo'");
+  await db.exec(`insert into lugares (id, nome, cidade, preco) values ('extra-1','Extra 1','Bauru',100),('extra-2','Extra 2','Bauru',120)
+                 on conflict (id) do update set ativo = true, fechado_em = null`);
+  const { kevin } = await criarCasal();
+  const primeiro = (await rpc("girar", kevin)).minha_rodada.lugar.id;
+  const p = await rpc("lugar_fechado", kevin);
+  assert.notEqual(p.minha_rodada.lugar.id, primeiro);
+  assert.equal(p.minha_rodada.regiros, 0, "não gasta as trocas normais");
+  assert.equal(p.minha_rodada.fechados, 1);
+  const fechado = (await db.query("select ativo, fechado_em from lugares where id = $1", [primeiro])).rows[0];
+  assert.equal(fechado.ativo, false);
+  assert.ok(fechado.fechado_em);
+  await rpc("lugar_fechado", kevin);
+  await rpc("lugar_fechado", kevin);
+  await falha(rpc("lugar_fechado", kevin), "sem_fechados");
+  await db.exec("update lugares set ativo = true, fechado_em = null; delete from lugares where id like 'extra-%'");
+  await db.exec("update lugares set ativo = false where id = 'inativo'");
+});
+
+test("seed de lugares não reativa lugar marcado como fechado", async () => {
+  await db.exec("update lugares set ativo = false, fechado_em = now() where id = 'medio-bauru'");
+  await db.exec(lugaresParaSql([{ id: "medio-bauru", nome: "Médio", cidade: "Bauru", preco: 160 }]));
+  assert.equal((await db.query("select ativo from lugares where id = 'medio-bauru'")).rows[0].ativo, false);
+  await db.exec("update lugares set ativo = true, fechado_em = null where id = 'medio-bauru'");
 });
 
 test("sair invalida o token", async () => {

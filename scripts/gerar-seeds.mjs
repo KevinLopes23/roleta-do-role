@@ -30,7 +30,8 @@ export function lugaresParaSql(lugares) {
   });
   const atualiza = CAMPOS.slice(1).map((c) => `${c} = excluded.${c}`).join(", ");
   return `insert into public.lugares (${CAMPOS.join(", ")}) values\n${linhas.join(",\n")}\n`
-    + `on conflict (id) do update set ${atualiza}, ativo = true;\n`
+    // Lugar marcado como fechado por um jogador continua fora até alguém limpar fechado_em.
+    + `on conflict (id) do update set ${atualiza}, ativo = lugares.fechado_em is null;\n`
     + `update public.config set pool_atualizado_em = now() where id = 1;\n`;
 }
 

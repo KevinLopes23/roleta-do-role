@@ -67,6 +67,8 @@ create table if not exists public.rodadas (
   sorteado_em timestamptz not null default now(),
   feito_em    timestamptz
 );
+alter table public.rodadas add column if not exists fechados int not null default 0;  -- trocas por "lugar fechado"
+alter table public.lugares add column if not exists fechado_em timestamptz;            -- marcado como fechado por um jogador
 create unique index if not exists rodadas_uma_aberta on public.rodadas (quem_leva) where status = 'sorteado';
 
 create table if not exists public.sessoes (
@@ -220,7 +222,7 @@ begin
     'pool_atualizado_em', (select pool_atualizado_em from config where id = 1),
     'minimo_lugares', (select minimo_lugares from config where id = 1),
     'minha_rodada', case when minha.id is null then null else json_build_object(
-        'id', minha.id, 'regiros', minha.regiros, 'dica', minha.dica, 'quando', minha.quando,
+        'id', minha.id, 'regiros', minha.regiros, 'fechados', minha.fechados, 'dica', minha.dica, 'quando', minha.quando,
         'sorteado_em', minha.sorteado_em, 'lugar', row_to_json(l)) end,
     'rodada_dele', case when dele.id is null then null else json_build_object(
         'dica', dele.dica, 'quando', dele.quando, 'sorteado_em', dele.sorteado_em) end,
@@ -281,6 +283,21 @@ begin
   return painel(p_token);
 end $$;
 
+-- Lugar fechado/indisponível: tira o lugar da roleta e sorteia outro sem gastar troca (até 3 por rodada).
+create or replace function public.lugar_fechado(p_token text) returns json
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare eu smallint := _sessao(p_token); r rodadas; v text;
+begin
+  select * into r from rodadas where quem_leva = eu and status = 'sorteado' for update;
+  if r.id is null then raise exception 'sem_rodada'; end if;
+  if r.fechados >= 3 then raise exception 'sem_fechados'; end if;
+  update lugares set ativo = false, fechado_em = now() where id = r.lugar_id;
+  v := _sortear(eu, r.lugar_id);
+  if v is null then raise exception 'sem_outro'; end if;
+  update rodadas set lugar_id = v, fechados = fechados + 1 where id = r.id;
+  return painel(p_token);
+end $$;
+
 -- Cancelar gasta uma troca (o próximo giro herda as trocas usadas): não dá pra burlar o limite.
 create or replace function public.cancelar(p_token text) returns json
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -303,7 +320,7 @@ revoke all on function public._sessao(text), public._nova_sessao(smallint), publ
   public._disponiveis(text), public._sortear(smallint, text), public._trocas_herdadas(smallint) from public, anon, authenticated;
 revoke all on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
-  public.concluir(text, numeric), public.cancelar(text), public.sair(text) from public, authenticated;
+  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text) from public, authenticated;
 grant execute on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
-  public.concluir(text, numeric), public.cancelar(text), public.sair(text) to anon;
+  public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text) to anon;

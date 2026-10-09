@@ -148,6 +148,9 @@ img { max-width: 100%; display: block; }
 .btn.fantasma { background: transparent; color: var(--texto-2); }
 .acoes { display: flex; flex-wrap: wrap; gap: 10px; }
 .acoes > * { flex: 1 1 auto; }
+.btn-fechado { align-self: center; background: none; border: 0; padding: 6px 10px; color: var(--texto-2); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.btn-fechado:hover:not(:disabled) { color: var(--neon); }
+.btn-fechado:disabled { text-decoration: none; opacity: 0.6; cursor: default; }
 
 /* ---------- nós dois (hero) ---------- */
 .nos { position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 6px; }

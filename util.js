@@ -39,6 +39,7 @@ const MENSAGENS = {
   sem_lugares: "A roleta está vazia. Peça pro Claude buscar lugares novos.",
   roleta_acabando: "A roleta está acabando. O Kevin precisa pedir lugares novos pro Claude antes do próximo giro.",
   sem_regiros: "Acabaram os giros extras dessa rodada.",
+  sem_fechados: "Já foram 3 lugares fechados nesta rodada. Use “Girar de novo” ou “Cancelar”.",
   sem_outro: "Não tem outra opção na roleta agora.",
   sem_rodada: "Não tem sorteio aberto.",
   valor_invalido: "Coloque um valor válido, tipo 180 ou 180,50.",

@@ -1,8 +1,8 @@
 // Roleta do Rolê — telas e fluxo. O banco decide tudo (sorteio, vez, segredo); aqui é só a experiência.
 // O ?v= força o celular a baixar a versão nova depois de cada publicação (o GitHub Pages guarda cache por 10 min).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=4";
-import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=4";
-import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=4";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=5";
+import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=5";
+import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=5";
 
 const app = document.getElementById("app");
 const CHAVE_SESSAO = "roleta.sessao";
@@ -281,11 +281,31 @@ function palcoBilhete(p, outro) {
   const regirar = h("button", { class: "btn", type: "button", disabled: !restam }, `Girar de novo (${restam})`);
   regirar.addEventListener("click", () => acao(regirar, async () => mostrarPainel(await comSessao("regirar"), true)));
   const cancelar = h("button", { class: "btn fantasma", type: "button", onclick: folhaCancelar }, "Cancelar");
+  const restamFechado = Math.max(0, 3 - (r.fechados || 0));
+  const fechado = h("button", { class: "btn-fechado", type: "button", disabled: !restamFechado, onclick: () => folhaFechado(restamFechado) },
+    restamFechado ? "Lugar fechado? Rodar de novo" : "Sem mais trocas por lugar fechado nesta rodada");
 
   return h("section", { class: "palco", "aria-label": "Seu rolê secreto" },
     h("p", { class: "titulo-bloco" }, "seu rolê secreto"),
     caixa,
-    h("div", { class: "acoes" }, feito, regirar, cancelar));
+    h("div", { class: "acoes" }, feito, regirar, cancelar),
+    fechado);
+}
+
+function folhaFechado(restam) {
+  const sim = h("button", { class: "btn neon", type: "button" }, "Rodar de novo");
+  let fechar = () => {};
+  sim.addEventListener("click", () => acao(sim, async () => {
+    const novo = await comSessao("lugar_fechado");
+    fechar();
+    toast("Lugar tirado da roleta. Raspa o bilhete novo ♥");
+    mostrarPainel(novo, true);
+  }));
+  fechar = folha([
+    h("h2", {}, "Lugar fechado?"),
+    h("p", {}, `Se o lugar fechou, mudou ou não está funcionando, ele sai da roleta e a gente sorteia outro na hora, sem gastar as suas trocas. Você ainda pode fazer isso ${restam} ${restam === 1 ? "vez" : "vezes"} nesta rodada.`),
+    h("div", { class: "acoes" }, sim, h("button", { class: "btn fantasma", type: "button", onclick: () => fechar() }, "Voltar")),
+  ]);
 }
 
 function palcoEnvelope(p, outro) {
