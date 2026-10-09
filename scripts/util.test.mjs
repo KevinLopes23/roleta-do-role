@@ -1,26 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { brl, lerValor, primeiroNome, mensagemErro, dataCurta, sabadoDoRole, contagemRole } from "../util.js";
+import { brl, lerValor, primeiroNome, mensagemErro, dataCurta, contagemRole, dataCampo } from "../util.js";
 
 const dia = (a, m, d, h = 12) => new Date(a, m - 1, d, h);
 
-test("o rolê é no sábado do fim de semana seguinte ao sorteio", () => {
-  // 9/out/2026 é sexta
-  assert.equal(sabadoDoRole(dia(2026, 10, 9)).getDate(), 10, "sorteou sexta → amanhã");
-  assert.equal(sabadoDoRole(dia(2026, 10, 6)).getDate(), 10, "terça → sábado da mesma semana");
-  assert.equal(sabadoDoRole(dia(2026, 10, 10)).getDate(), 17, "sábado → sábado seguinte");
-  assert.equal(sabadoDoRole(dia(2026, 10, 11)).getDate(), 17, "domingo → sábado seguinte");
-  assert.equal(sabadoDoRole("lixo"), null);
+test("contagem regressiva conta até o dia escolhido por quem leva", () => {
+  const hoje = dia(2026, 10, 9);
+  assert.equal(contagemRole("2026-10-13", hoje).dias, 4);
+  assert.match(contagemRole("2026-10-13", hoje).titulo, /faltam 4 dias/);
+  assert.match(contagemRole("2026-10-10", hoje).titulo, /amanhã/);
+  assert.match(contagemRole("2026-10-09", hoje).titulo, /hoje/);
+  assert.match(contagemRole("2026-10-08", hoje).titulo, /já passou/);
+  assert.equal(contagemRole(null, hoje), null);
+  assert.equal(contagemRole("2026-02-31", hoje), null, "data impossível");
 });
 
-test("contagem regressiva muda de texto conforme o dia", () => {
-  const sorteio = dia(2026, 10, 6);
-  assert.equal(contagemRole(sorteio, dia(2026, 10, 6)).dias, 4);
-  assert.match(contagemRole(sorteio, dia(2026, 10, 6)).titulo, /faltam 4 dias/);
-  assert.match(contagemRole(sorteio, dia(2026, 10, 9)).titulo, /amanhã/);
-  assert.match(contagemRole(sorteio, dia(2026, 10, 10)).titulo, /fim de semana de rolê/);
-  assert.match(contagemRole(sorteio, dia(2026, 10, 11)).titulo, /fim de semana de rolê/);
-  assert.match(contagemRole(sorteio, dia(2026, 10, 13)).titulo, /já passou/);
+test("dataCampo gera o formato do campo de data", () => {
+  assert.equal(dataCampo(0, dia(2026, 10, 9)), "2026-10-09");
+  assert.equal(dataCampo(60, dia(2026, 10, 9)), "2026-12-08");
 });
 
 test("lerValor aceita formatos brasileiros e recusa lixo", () => {

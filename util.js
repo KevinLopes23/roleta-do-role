@@ -26,27 +26,32 @@ export function dataCurta(iso) {
 const DIA_MS = 86400000;
 const meiaNoite = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-/** O rolê é no fim de semana seguinte ao sorteio: devolve o sábado (sorteou no sábado/domingo → sábado seguinte). */
-export function sabadoDoRole(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const base = meiaNoite(d);
-  const ate = ((6 - base.getDay() + 7) % 7) || 7;
-  return new Date(base.getFullYear(), base.getMonth(), base.getDate() + ate);
+/** "2026-10-17" → Date local (meia-noite). null se inválida. */
+export function lerDataRole(texto) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(texto ?? ""));
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.getMonth() === Number(m[2]) - 1 ? d : null;
 }
 
-/** Contagem regressiva até o fim de semana do rolê. `agora` só existe pra teste. */
-export function contagemRole(iso, agora = new Date()) {
-  const sabado = sabadoDoRole(iso);
-  if (!sabado) return null;
-  const dias = Math.round((sabado - meiaNoite(agora)) / DIA_MS);
-  const data = `${sabado.toLocaleDateString("pt-BR", { day: "numeric", month: "long" })} e ${new Date(sabado.getTime() + DIA_MS).toLocaleDateString("pt-BR", { day: "numeric", month: "long" })}`;
+/** Contagem regressiva até o dia escolhido por quem vai levar. `agora` só existe pra teste. */
+export function contagemRole(dataRole, agora = new Date()) {
+  const dia = lerDataRole(dataRole);
+  if (!dia) return null;
+  const dias = Math.round((dia - meiaNoite(agora)) / DIA_MS);
+  const data = dia.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   let titulo;
   if (dias > 1) titulo = `faltam ${dias} dias pro rolê`;
   else if (dias === 1) titulo = "o rolê é amanhã!";
-  else if (dias >= -1) titulo = "é fim de semana de rolê ♥";
-  else titulo = "o fim de semana do rolê já passou";
-  return { dias, titulo, data: dias >= -1 ? `sáb e dom · ${data}` : "Já foi? Marque como feito." };
+  else if (dias === 0) titulo = "o rolê é hoje! ♥";
+  else titulo = "o dia do rolê já passou";
+  return { dias, titulo, data: dias >= 0 ? data : "Já foi? Marque como feito." };
+}
+
+/** Data de hoje e daqui a N dias no formato do campo date ("YYYY-MM-DD"). */
+export function dataCampo(diasAFrente = 0, agora = new Date()) {
+  const d = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + diasAFrente);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export const primeiroNome =(nome) => String(nome ?? "").trim().split(/\s+/)[0] || "Alguém";
@@ -74,6 +79,7 @@ const MENSAGENS = {
   vetos_demais: "No máximo 3 vetos.",
   veto_invalido: "Esse tipo de rolê não existe.",
   foto_invalida: "Não deu pra usar essa foto. Tenta outra.",
+  data_invalida: "Escolha um dia de hoje até daqui 2 meses.",
   foto_ilegivel: "Não consegui abrir essa foto. Tenta outra (JPG ou da galeria).",
 };
 

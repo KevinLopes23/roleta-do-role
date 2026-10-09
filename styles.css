@@ -375,3 +375,6 @@ img { max-width: 100%; display: block; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
+.contagem.sem-data { background: rgba(255, 255, 255, 0.03); border-style: dashed; }
+.contagem.sem-data .contagem-titulo { font-weight: 600; color: var(--texto-2); }
+.campo input[type="date"] { min-height: 48px; }

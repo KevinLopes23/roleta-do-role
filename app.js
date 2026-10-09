@@ -1,8 +1,8 @@
 // Roleta do Rolê — telas e fluxo. O banco decide tudo (sorteio, vez, segredo); aqui é só a experiência.
 // O ?v= força o celular a baixar a versão nova depois de cada publicação (o GitHub Pages guarda cache por 10 min).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=6";
-import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido, notaCoracoes, comprimirFoto } from "./componentes.js?v=6";
-import { brl, lerValor, dataCurta, primeiroNome, mensagemErro, contagemRole } from "./util.js?v=6";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=7";
+import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido, notaCoracoes, comprimirFoto } from "./componentes.js?v=7";
+import { brl, lerValor, dataCurta, primeiroNome, mensagemErro, contagemRole, dataCampo } from "./util.js?v=7";
 
 const app = document.getElementById("app");
 const CHAVE_SESSAO = "roleta.sessao";
@@ -277,24 +277,21 @@ function palcoBilhete(p, outro) {
   const caixa = h("div", { class: "bilhete-caixa" }, bilhete);
   if (!lerLocal(chave)) raspadinha(caixa, () => { gravarLocal(chave, true); confete(14); });
 
-  const restam = Math.max(0, 2 - (r.regiros || 0));
   const feito = h("button", { class: "btn rosa", type: "button", onclick: () => folhaConcluir(outro) }, "Rolê feito ♥");
-  const regirar = h("button", { class: "btn", type: "button", disabled: !restam }, `Girar de novo (${restam})`);
+  const regirar = h("button", { class: "btn", type: "button" }, "Girar de novo");
   regirar.addEventListener("click", () => acao(regirar, async () => mostrarPainel(await comSessao("regirar"), true)));
   const cancelar = h("button", { class: "btn fantasma", type: "button", onclick: folhaCancelar }, "Cancelar");
-  const restamFechado = Math.max(0, 3 - (r.fechados || 0));
-  const fechado = h("button", { class: "btn-fechado", type: "button", disabled: !restamFechado, onclick: () => folhaFechado(restamFechado) },
-    restamFechado ? "Lugar fechado? Rodar de novo" : "Sem mais trocas por lugar fechado nesta rodada");
+  const fechado = h("button", { class: "btn-fechado", type: "button", onclick: folhaFechado }, "Lugar fechado? Rodar de novo");
 
   return h("section", { class: "palco", "aria-label": "Seu rolê secreto" },
     h("p", { class: "titulo-bloco" }, "seu rolê secreto"),
-    blocoContagem(r.sorteado_em),
+    blocoContagem(r.data_role, true),
     caixa,
     h("div", { class: "acoes" }, feito, regirar, cancelar),
     fechado);
 }
 
-function folhaFechado(restam) {
+function folhaFechado() {
   const sim = h("button", { class: "btn neon", type: "button" }, "Rodar de novo");
   let fechar = () => {};
   sim.addEventListener("click", () => acao(sim, async () => {
@@ -305,7 +302,7 @@ function folhaFechado(restam) {
   }));
   fechar = folha([
     h("h2", {}, "Lugar fechado?"),
-    h("p", {}, `Se o lugar fechou, mudou ou não está funcionando, ele sai da roleta e a gente sorteia outro na hora, sem gastar as suas trocas. Você ainda pode fazer isso ${restam} ${restam === 1 ? "vez" : "vezes"} nesta rodada.`),
+    h("p", {}, "Se o lugar fechou, mudou ou não está funcionando, ele sai da roleta de vez e a gente sorteia outro na hora."),
     h("div", { class: "acoes" }, sim, h("button", { class: "btn fantasma", type: "button", onclick: () => fechar() }, "Voltar")),
   ]);
 }
@@ -326,14 +323,17 @@ function palcoEnvelope(p, outro) {
   });
   return h("section", { class: "palco", "aria-label": "Surpresa em andamento" },
     h("p", { class: "titulo-bloco rosa" }, `${primeiroNome(outro.nome)} já sorteou`),
-    blocoContagem(r.sorteado_em),
+    blocoContagem(r.data_role, false),
     envelope, legenda);
 }
 
-// Contagem regressiva: o rolê é no fim de semana seguinte ao sorteio.
-function blocoContagem(sorteadoEm) {
-  const c = contagemRole(sorteadoEm);
-  if (!c) return null;
+// Contagem regressiva até o dia que quem leva escolheu no recado.
+function blocoContagem(dataRole, souQuemLeva) {
+  const c = contagemRole(dataRole);
+  if (!c) {
+    return h("div", { class: "contagem sem-data" }, coracao("rgba(255,93,143,.5)", { width: "26" }),
+      h("p", { class: "contagem-titulo" }, souQuemLeva ? "Escolha o dia do rolê no recado aqui embaixo" : "O dia do rolê ainda não foi marcado"));
+  }
   return h("div", { class: `contagem ${c.dias <= 0 ? "hoje" : ""}`, role: "status" },
     c.dias > 0 ? h("b", { class: "contagem-numero" }, String(c.dias)) : coracao("#ff5d8f", { width: "30" }),
     h("div", {}, h("p", { class: "contagem-titulo" }, c.titulo), h("p", { class: "contagem-data" }, c.data)));
@@ -350,19 +350,21 @@ function palcoEsperando(outro) {
 function blocoRecado(p) {
   const r = p.minha_rodada;
   const dica = h("input", { id: "dica", maxlength: "140", value: r.dica || "", placeholder: "ex: vai de tênis e leva casaco" });
-  const quando = h("input", { id: "quando", maxlength: "40", value: r.quando || "", placeholder: "ex: sábado, 19h" });
+  const dia = h("input", { id: "dia", type: "date", min: dataCampo(0), max: dataCampo(60), value: r.data_role || "" });
+  const quando = h("input", { id: "quando", maxlength: "40", value: r.quando || "", placeholder: "ex: 19h, depois do trabalho" });
   const salvar = h("button", { class: "btn neon", type: "submit" }, "Mandar recado");
   const enviar = (e) => {
     e.preventDefault();
     acao(salvar, async () => {
-      mostrarPainel(await comSessao("recado", { p_dica: dica.value, p_quando: quando.value }));
+      mostrarPainel(await comSessao("recado", { p_dica: dica.value, p_quando: quando.value, p_data: dia.value || null }));
       toast("Recado entregue no envelope ♥");
     });
   };
   return h("form", { class: "palco recado", "aria-label": "Recado", onsubmit: enviar },
     h("p", { class: "titulo-bloco" }, "recado pro envelope"),
     h("label", { class: "campo", for: "dica" }, h("span", {}, "Dica sem entregar o lugar"), dica),
-    h("label", { class: "campo", for: "quando" }, h("span", {}, "Quando"), quando),
+    h("label", { class: "campo", for: "dia" }, h("span", {}, "Dia do rolê"), dia),
+    h("label", { class: "campo", for: "quando" }, h("span", {}, "Horário"), quando),
     salvar);
 }
 
@@ -474,13 +476,13 @@ function blocoRegras() {
     h("ol", {},
       h("li", {}, "Antes de acabar, o Kevin pede pro Claude atualizar a roleta. Com menos de 10 lugares o giro trava até lá."),
       h("li", {}, "Na sua vez, gire e raspe o bilhete. Só você vê o lugar."),
-      h("li", {}, "Se não der (fechado, lotado), gire de novo até 2 vezes."),
-      h("li", {}, "Deixe um recado no envelope: a dica de roupa e o horário."),
+      h("li", {}, "Não curtiu ou não dá? Gire de novo quantas vezes quiser. Se o lugar fechou, toque em “Lugar fechado?” e ele sai da roleta."),
+      h("li", {}, "Quem vai levar escolhe o dia e deixa um recado no envelope (dica de roupa e horário)."),
       h("li", {}, "Depois do rolê, toque em \"Rolê feito\" e coloque quanto gastou. A vez passa."),
       h("li", {}, "A gangorra compara os gastos: quem gastou menos cai em rolês mais caros, até empatar."),
       h("li", {}, "Lugar visitado só volta pra roleta depois de 2 meses e meio (1 mês e meio se a média for 4,5 ou mais)."),
       h("li", {}, "Depois do rolê, cada um dá de 1 a 5 corações no álbum. Média 2 ou menos e o lugar não volta."),
-      h("li", {}, "O rolê é no fim de semana seguinte ao sorteio. A contagem aparece no bilhete e no envelope.")));
+      h("li", {}, "A contagem regressiva até o dia marcado aparece no bilhete e no envelope. A roleta do outro só aparece depois do rolê confirmado.")));
 }
 
 // ---------------------------------------------------------------- folhas

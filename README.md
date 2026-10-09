@@ -4,6 +4,10 @@ Aplicação web para casais sortearem encontros surpresa em Bauru-SP e região. 
 
 **Produção:** https://kevinlopes23.github.io/roleta-do-role/
 
+![Telas da Roleta do Rolê: roleta, bilhete secreto, envelope com contagem regressiva e álbum](docs/telas.png)
+
+<sub>Capturas em modo de demonstração (`DEMO=1 node scripts/servidor-local.mjs`), sem dados reais.</sub>
+
 ---
 
 ## Sumário
@@ -32,9 +36,9 @@ Aplicação web para casais sortearem encontros surpresa em Bauru-SP e região. 
 | Recado em envelope | Quem vai levar deixa uma dica (roupa, horário) sem revelar o destino. |
 | Gangorra dos gastos | Mostra visualmente quanto cada um já gastou e quem está "devendo". |
 | Álbum de polaroids | Histórico dos encontros realizados, com local, data e valor. |
-| Trocas limitadas | Até 2 trocas por vez (girar de novo ou cancelar), sem brecha para sortear sem limite. |
-| Lugar fechado | "Lugar fechado? Rodar de novo" tira o lugar da roleta e sorteia outro sem gastar trocas (até 3 por rodada). |
-| Contagem regressiva | O rolê é no fim de semana seguinte ao sorteio; bilhete e envelope mostram quantos dias faltam. |
+| Giros livres | Girar de novo e cancelar sem limite, até achar o rolê que dá certo. |
+| Lugar fechado | "Lugar fechado? Rodar de novo" tira o lugar da roleta de vez e sorteia outro. |
+| Dia do rolê | Quem vai levar escolhe o dia no recado; bilhete e envelope mostram a contagem regressiva. A roleta do outro só aparece depois do rolê confirmado. |
 | Avaliação | Cada um dá de 1 a 5 corações. Média ≤ 2 tira o lugar; média ≥ 4,5 faz ele voltar em 45 dias em vez de 76. |
 | Veto secreto | Cada um veta até 3 tipos de rolê, sem o outro ver; a roleta evita os vetos dos dois. |
 | Fotos no álbum | A foto do dia vira a polaroid. É comprimida no celular e carregada sob demanda. |
@@ -177,7 +181,7 @@ A suíte roda o `schema.sql` num Postgres embutido (PGlite) e cobre:
 
 - ativação de perfil, convite, PIN e bloqueios;
 - segredo do sorteio entre os jogadores;
-- limite de trocas e cancelamentos;
+- giros sem limite, lugar fechado e data escolhida por quem leva;
 - equilíbrio de gastos e bloqueio de 76 dias;
 - trava por estoque mínimo;
 - permissões dos papéis `anon` e `authenticated`;

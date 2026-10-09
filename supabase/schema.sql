@@ -82,6 +82,7 @@ alter table public.jogadores enable row level security;
 alter table public.config    enable row level security;
 alter table public.lugares   enable row level security;
 alter table public.rodadas   enable row level security;
+alter table public.rodadas add column if not exists data_role date;  -- dia do rolê, marcado por quem vai levar
 alter table public.rodadas add column if not exists foto text;  -- foto do rolê (data URL JPEG, comprimida no celular)
 alter table public.lugares add column if not exists grupo text;  -- grupo para o veto secreto (preenchido por gatilho)
 
@@ -289,9 +290,9 @@ begin
     'minimo_lugares', (select minimo_lugares from config where id = 1),
     'minha_rodada', case when minha.id is null then null else json_build_object(
         'id', minha.id, 'regiros', minha.regiros, 'fechados', minha.fechados, 'dica', minha.dica, 'quando', minha.quando,
-        'sorteado_em', minha.sorteado_em, 'lugar', row_to_json(l)) end,
+        'sorteado_em', minha.sorteado_em, 'data_role', minha.data_role, 'lugar', row_to_json(l)) end,
     'rodada_dele', case when dele.id is null then null else json_build_object(
-        'dica', dele.dica, 'quando', dele.quando, 'sorteado_em', dele.sorteado_em) end,
+        'dica', dele.dica, 'quando', dele.quando, 'sorteado_em', dele.sorteado_em, 'data_role', dele.data_role) end,
     'meus_vetos', (select coalesce(json_agg(grupo order by grupo), '[]') from vetos where jogador = eu),
     'historico', coalesce((select json_agg(h order by h.feito_em desc) from (
         select r.id, r.quem_leva, r.valor, r.feito_em, x.nome, x.cidade, x.categoria, r.foto is not null as tem_foto,
@@ -310,7 +311,7 @@ begin
   if (select vez from config where id = 1) is distinct from eu then raise exception 'nao_e_sua_vez'; end if;
   if exists (select 1 from rodadas where quem_leva = eu and status = 'sorteado') then raise exception 'ja_sorteado'; end if;
   if (select count(*) from _disponiveis()) < (select minimo_lugares from config where id = 1) then raise exception 'roleta_acabando'; end if;
-  usadas := least(_trocas_herdadas(eu), 2);
+  usadas := _trocas_herdadas(eu);  -- só estatística: não há limite de giros
   v := _sortear(eu);
   if v is null then raise exception 'sem_lugares'; end if;
   insert into rodadas (quem_leva, status, lugar_id, regiros) values (eu, 'sorteado', v, usadas);
@@ -323,18 +324,21 @@ declare eu smallint := _sessao(p_token); r rodadas; v text;
 begin
   select * into r from rodadas where quem_leva = eu and status = 'sorteado' for update;
   if r.id is null then raise exception 'sem_rodada'; end if;
-  if r.regiros >= 2 then raise exception 'sem_regiros'; end if;
   v := _sortear(eu, r.lugar_id);
   if v is null then raise exception 'sem_outro'; end if;
   update rodadas set lugar_id = v, regiros = regiros + 1 where id = r.id;
   return painel(p_token);
 end $$;
 
-create or replace function public.recado(p_token text, p_dica text, p_quando text) returns json
+drop function if exists public.recado(text, text, text);
+drop function if exists public.recado(text, text, text, date);
+-- Recado do envelope + o dia do rolê, escolhido por quem vai levar (de hoje até 60 dias).
+create or replace function public.recado(p_token text, p_dica text, p_quando text, p_data date default null) returns json
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare eu smallint := _sessao(p_token);
 begin
-  update rodadas set dica = left(btrim(coalesce(p_dica, '')), 140), quando = left(btrim(coalesce(p_quando, '')), 40)
+  if p_data is not null and (p_data < current_date or p_data > current_date + 60) then raise exception 'data_invalida'; end if;
+  update rodadas set dica = left(btrim(coalesce(p_dica, '')), 140), quando = left(btrim(coalesce(p_quando, '')), 40), data_role = p_data
    where quem_leva = eu and status = 'sorteado';
   if not found then raise exception 'sem_rodada'; end if;
   return painel(p_token);
@@ -359,7 +363,6 @@ declare eu smallint := _sessao(p_token); r rodadas; v text;
 begin
   select * into r from rodadas where quem_leva = eu and status = 'sorteado' for update;
   if r.id is null then raise exception 'sem_rodada'; end if;
-  if r.fechados >= 3 then raise exception 'sem_fechados'; end if;
   update lugares set ativo = false, fechado_em = now() where id = r.lugar_id;
   v := _sortear(eu, r.lugar_id);
   if v is null then raise exception 'sem_outro'; end if;
@@ -414,14 +417,13 @@ begin
   return (select foto from rodadas where id = p_rodada and status = 'feito');
 end $$;
 
--- Cancelar gasta uma troca (o próximo giro herda as trocas usadas): não dá pra burlar o limite.
+-- Cancelar: o sorteio some e a pessoa gira de novo (sem limite de giros, a pedido do casal).
 create or replace function public.cancelar(p_token text) returns json
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare eu smallint := _sessao(p_token); r rodadas;
 begin
   select * into r from rodadas where quem_leva = eu and status = 'sorteado' for update;
   if r.id is null then raise exception 'sem_rodada'; end if;
-  if r.regiros >= 2 then raise exception 'sem_regiros'; end if;
   update rodadas set status = 'cancelado' where id = r.id;
   return painel(p_token);
 end $$;
@@ -435,8 +437,8 @@ $$;
 revoke all on function public._sessao(text), public._nova_sessao(smallint), public._gastos(), public._alvo(smallint),
   public._disponiveis(text), public._sortear(smallint, text), public._trocas_herdadas(smallint), public._grupo(text, text), public._lugar_grupo() from public, anon, authenticated;
 revoke all on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
-  public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
+  public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text, date),
   public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) from public, authenticated;
 grant execute on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
-  public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
+  public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text, date),
   public.concluir(text, numeric), public.cancelar(text), public.lugar_fechado(text), public.sair(text), public.avaliar(text, uuid, int), public.vetos_salvar(text, text[]), public.foto_salvar(text, uuid, text), public.foto(text, uuid) to anon;

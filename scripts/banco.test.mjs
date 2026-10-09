@@ -85,19 +85,18 @@ test("sorteio é segredo: o outro vê só dica e quando", async () => {
   await rpc("recado", kevin, "  vai de tênis  ", "sábado 18h");
   const visao = await rpc("painel", ela);
   assert.equal(visao.minha_rodada, null);
-  assert.deepEqual(Object.keys(visao.rodada_dele).sort(), ["dica", "quando", "sorteado_em"]);
+  assert.deepEqual(Object.keys(visao.rodada_dele).sort(), ["data_role", "dica", "quando", "sorteado_em"]);
   assert.equal(visao.rodada_dele.dica, "vai de tênis");
   assert.ok(!JSON.stringify(visao).includes(p.minha_rodada.lugar.id), "o id do lugar não vaza pro outro");
 });
 
-test("regirar troca o lugar no máximo 2 vezes", async () => {
+test("regirar troca o lugar sem limite de vezes", async () => {
   await reiniciarJogo();
   const { kevin } = await criarCasal();
   const a = (await rpc("girar", kevin)).minha_rodada.lugar.id;
   const b = (await rpc("regirar", kevin)).minha_rodada.lugar.id;
   assert.notEqual(a, b);
-  await rpc("regirar", kevin);
-  await falha(rpc("regirar", kevin), "sem_regiros");
+  for (let i = 0; i < 5; i++) assert.ok((await rpc("regirar", kevin)).minha_rodada.lugar.id);
 });
 
 test("só sorteia lugares ativos dentro de R$ 20–600", async () => {
@@ -136,18 +135,15 @@ test("quem gastou menos tende a cair em rolês mais caros", async () => {
   assert.equal(alvoKevin.alvo, 20);
 });
 
-test("cancelar mantém a vez mas gasta uma troca: não dá pra sortear sem limite", async () => {
+test("cancelar mantém a vez e não tem limite", async () => {
   await reiniciarJogo();
   const { kevin } = await criarCasal();
   await rpc("girar", kevin);
   const p = await rpc("cancelar", kevin);
   assert.equal(p.minha_rodada, null);
   assert.equal(p.vez, 1);
-  assert.equal((await rpc("girar", kevin)).minha_rodada.regiros, 1, "herda a troca do cancelamento");
-  await rpc("regirar", kevin);
-  await falha(rpc("cancelar", kevin), "sem_regiros");
-  await falha(rpc("regirar", kevin), "sem_regiros");
-  assert.ok((await rpc("painel", kevin)).minha_rodada, "continua com um sorteio, nunca fica travado");
+  for (let i = 0; i < 4; i++) { await rpc("girar", kevin); await rpc("regirar", kevin); await rpc("cancelar", kevin); }
+  assert.ok((await rpc("girar", kevin)).minha_rodada, "pode cancelar e girar quantas vezes quiser");
 });
 
 test("depois do rolê feito, a próxima vez começa sem trocas usadas", async () => {
@@ -217,7 +213,7 @@ test("com menos lugares que o mínimo, a roleta trava o giro (mas não o sorteio
   }
 });
 
-test("lugar fechado: tira da roleta, sorteia outro sem gastar troca, até 3 vezes", async () => {
+test("lugar fechado: tira da roleta e sorteia outro, sem limite", async () => {
   await reiniciarJogo();
   await db.exec("update lugares set ativo = true, fechado_em = null where id <> 'inativo'");
   await db.exec(`insert into lugares (id, nome, cidade, preco) values ('extra-1','Extra 1','Bauru',100),('extra-2','Extra 2','Bauru',120)
@@ -233,7 +229,7 @@ test("lugar fechado: tira da roleta, sorteia outro sem gastar troca, até 3 veze
   assert.ok(fechado.fechado_em);
   await rpc("lugar_fechado", kevin);
   await rpc("lugar_fechado", kevin);
-  await falha(rpc("lugar_fechado", kevin), "sem_fechados");
+  assert.equal((await rpc("lugar_fechado", kevin)).minha_rodada.fechados, 4, "sem limite de lugares fechados");
   await db.exec("delete from rodadas; update lugares set ativo = true, fechado_em = null; delete from lugares where id like 'extra-%'");
   await db.exec("update lugares set ativo = false where id = 'inativo'");
 });
@@ -306,6 +302,26 @@ test("foto do rolê: só JPEG em data URL, só em rolê feito, carregada sob dem
   assert.ok(!JSON.stringify(p).includes("/9j/AAAA"), "o painel não carrega a foto inteira");
   assert.equal(await rpc("foto", kevin, rodada), "data:image/jpeg;base64,/9j/AAAA");
   await falha(rpc("foto", "token-falso", rodada), "sessao_invalida");
+});
+
+test("quem leva escolhe o dia do rolê, e o outro vê a data no envelope", async () => {
+  await reiniciarJogo();
+  const { kevin, ela } = await criarCasal();
+  await rpc("girar", kevin);
+  const daqui3 = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  const p = await rpc("recado", kevin, "leva casaco", "19h", daqui3);
+  assert.equal(p.minha_rodada.data_role, daqui3);
+  assert.equal((await rpc("painel", ela)).rodada_dele.data_role, daqui3);
+  await falha(rpc("recado", kevin, "", "", "2020-01-01"), "data_invalida");
+});
+
+test("a roleta só aparece pro outro depois que o rolê é confirmado", async () => {
+  await reiniciarJogo();
+  const { kevin, ela } = await criarCasal();
+  await rpc("girar", kevin);
+  await falha(rpc("girar", ela), "nao_e_sua_vez");
+  await rpc("concluir", kevin, 120);
+  assert.ok((await rpc("girar", ela)).minha_rodada, "depois do rolê feito, a vez é dela");
 });
 
 test("sair invalida o token", async () => {

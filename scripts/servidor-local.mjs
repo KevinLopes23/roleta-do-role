@@ -16,7 +16,12 @@ const db = await PGlite.create({ extensions: { pgcrypto } });
 await db.exec("create schema extensions; create role anon nologin; create role authenticated nologin;");
 await db.exec(readFileSync(join(RAIZ, "supabase/schema.sql"), "utf8"));
 const privado = join(RAIZ, "supabase/seed-privado.sql");
-if (existsSync(privado)) await db.exec(readFileSync(privado, "utf8"));
+// DEMO=1: perfis de demonstração (avatar com a inicial, sem fotos reais) para capturas de tela públicas. Convite: "demo".
+const avatar = (letra, cor) => "data:image/svg+xml;utf8," + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><radialGradient id="g" cx="40%" cy="35%"><stop offset="0" stop-color="${cor}"/><stop offset="1" stop-color="#1a0d13"/></radialGradient></defs><rect width="200" height="200" fill="url(#g)"/><text x="100" y="128" font-family="Georgia, serif" font-style="italic" font-size="96" fill="#fff4e2" text-anchor="middle">${letra}</text></svg>`);
+if (process.env.DEMO) await db.exec(`insert into jogadores (id, nome, foto) values (1, 'Kevin', '${avatar("K", "#b8862e")}'), (2, 'Mariana', '${avatar("M", "#c2335f")}');
+  insert into config (id, convite_hash) values (1, extensions.crypt('demo', extensions.gen_salt('bf')));`);
+else if (existsSync(privado)) await db.exec(readFileSync(privado, "utf8"));
 else await db.exec("insert into jogadores (id, nome) values (1, 'Kevin'), (2, 'Ela'); insert into config (id, convite_hash) values (1, extensions.crypt('teste', extensions.gen_salt('bf')));");
 await db.exec(readFileSync(join(RAIZ, "supabase/seed-lugares.sql"), "utf8"));
 
