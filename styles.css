@@ -279,6 +279,15 @@ img { max-width: 100%; display: block; }
 .polaroid .legenda-mao { margin: 10px 2px 4px; }
 .vazio { color: var(--texto-2); font-size: 14px; margin: 0; }
 
+/* lugares na roleta + busca automática */
+.busca { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border-radius: var(--r-m); border: 1px dashed var(--linha); background: rgba(0, 0, 0, 0.25); }
+.busca-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.busca-numero { margin: 0; color: var(--texto-2); font-size: 14px; }
+.busca-numero b { font-family: var(--f-num); font-weight: 500; font-size: 26px; color: var(--neon); margin-right: 4px; }
+.busca .btn { padding: 10px 16px; font-size: 14px; }
+.busca-texto { margin: 0; font-size: 13px; color: var(--texto-2); }
+.busca-texto.fraco { opacity: 0.7; font-size: 12px; }
+
 /* como funciona */
 .regras { border-top: 1px solid var(--linha); padding-top: 4px; }
 .regras summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 14px 2px; font-weight: 600; color: var(--texto-2); }

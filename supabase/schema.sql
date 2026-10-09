@@ -26,6 +26,10 @@ create table if not exists public.config (
   convite_bloq_ate   timestamptz,
   pool_atualizado_em timestamptz
 );
+-- Busca automática de lugares (função gerar-lugares): estado e quando rodou por último.
+alter table public.config add column if not exists geracao_status text not null default 'parado';
+alter table public.config add column if not exists geracao_em timestamptz;
+alter table public.config add column if not exists geracao_msg text;
 
 create table if not exists public.lugares (
   id           text primary key,             -- slug estável nome+cidade (bloqueio de repetição usa ele)
@@ -134,6 +138,62 @@ language sql stable security definer set search_path = public, pg_temp as $$
      and sorteado_em > coalesce((select max(feito_em) from rodadas where quem_leva = p_eu and status = 'feito'), '-infinity')
 $$;
 
+-- Pode buscar lugares novos? Não se já estiver buscando (até 5 min), nem se buscou nas últimas 6h
+-- (ou falhou na última 1h) — a menos que a roleta esteja quase vazia.
+create or replace function public._pode_gerar() returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select case
+    when c.geracao_status = 'gerando' and c.geracao_em > now() - interval '5 minutes' then false
+    when c.geracao_em is null then true
+    when c.geracao_status = 'erro' then c.geracao_em < now() - interval '1 hour'
+    when (select count(*) from _disponiveis()) < 10 then c.geracao_em < now() - interval '10 minutes'
+    else c.geracao_em < now() - interval '6 hours'
+  end
+  from config c where c.id = 1
+$$;
+
+-- Chamadas só pela função gerar-lugares (service_role): reservar a busca, salvar o resultado, registrar falha.
+create or replace function public.geracao_iniciar(p_token text) returns json
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare eu smallint := _sessao(p_token);
+begin
+  perform 1 from config where id = 1 for update;
+  if not _pode_gerar() then raise exception 'geracao_cedo'; end if;
+  update config set geracao_status = 'gerando', geracao_em = now(), geracao_msg = null where id = 1;
+  return json_build_object(
+    'existentes', (select coalesce(json_agg(nome || ' (' || cidade || ')' order by nome), '[]') from lugares where ativo),
+    'disponiveis', (select count(*) from _disponiveis()),
+    'gastos', (select json_object_agg(jogador, total) from _gastos()));
+end $$;
+
+create or replace function public.geracao_salvar(p_lugares jsonb) returns json
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare l jsonb; novos int := 0; slug text;
+begin
+  for l in select * from jsonb_array_elements(coalesce(p_lugares, '[]'::jsonb)) loop
+    slug := left(trim(both '-' from regexp_replace(lower(translate(coalesce(l->>'nome', '') || '-' || coalesce(l->>'cidade', ''),
+      'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn')), '[^a-z0-9]+', '-', 'g')), 80);
+    continue when length(slug) < 3 or coalesce(l->>'nome', '') = '' or coalesce(l->>'cidade', '') = '';
+    continue when (l->>'preco') !~ '^\d{2,3}$' or (l->>'preco')::int not between 20 and 600;
+    continue when (l->>'distancia_km') !~ '^\d{1,3}$' or (l->>'distancia_km')::int > 100;
+    continue when exists (select 1 from lugares where id = slug);
+    insert into lugares (id, nome, cidade, distancia_km, categoria, preco, faixa, descricao, o_que_fazer, endereco, horario, dica, link)
+    values (slug, left(l->>'nome', 80), left(l->>'cidade', 40), (l->>'distancia_km')::int, left(nullif(l->>'categoria', ''), 40),
+            (l->>'preco')::int, left(nullif(l->>'faixa', ''), 60), left(nullif(l->>'descricao', ''), 400),
+            left(nullif(l->>'o_que_fazer', ''), 300), left(nullif(l->>'endereco', ''), 160), left(nullif(l->>'horario', ''), 120),
+            left(nullif(l->>'dica', ''), 200), case when l->>'link' ~ '^https://' then left(l->>'link', 300) end);
+    novos := novos + 1;
+  end loop;
+  update config set geracao_status = 'parado', geracao_msg = novos || ' lugares novos na roleta',
+         pool_atualizado_em = case when novos > 0 then now() else pool_atualizado_em end where id = 1;
+  return json_build_object('novos', novos);
+end $$;
+
+create or replace function public.geracao_falhou(p_msg text) returns void
+language sql security definer set search_path = public, pg_temp as $$
+  update config set geracao_status = 'erro', geracao_msg = left(p_msg, 200) where id = 1
+$$;
+
 -- ---------------------------------------------------------------- API pública (RPC)
 
 create or replace function public.jogadores_publico() returns json
@@ -208,6 +268,8 @@ begin
     'deficit', a.deficit, 'alvo', a.alvo,
     'disponiveis', (select count(*) from _disponiveis()),
     'pool_atualizado_em', (select pool_atualizado_em from config where id = 1),
+    'geracao', (select json_build_object('status', geracao_status, 'em', geracao_em, 'msg', geracao_msg,
+                  'pode', _pode_gerar(), 'liberada_em', geracao_em + interval '6 hours') from config where id = 1),
     'minha_rodada', case when minha.id is null then null else json_build_object(
         'id', minha.id, 'regiros', minha.regiros, 'dica', minha.dica, 'quando', minha.quando,
         'sorteado_em', minha.sorteado_em, 'lugar', row_to_json(l)) end,
@@ -288,10 +350,16 @@ $$;
 
 -- Só a API pública fica exposta (para anon); helpers internos e o papel authenticated, não.
 revoke all on function public._sessao(text), public._nova_sessao(smallint), public._gastos(), public._alvo(smallint),
-  public._disponiveis(text), public._sortear(smallint, text), public._trocas_herdadas(smallint) from public, anon, authenticated;
+  public._disponiveis(text), public._sortear(smallint, text), public._trocas_herdadas(smallint), public._pode_gerar(),
+  public.geracao_iniciar(text), public.geracao_salvar(jsonb), public.geracao_falhou(text) from public, anon, authenticated;
 revoke all on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
   public.concluir(text, numeric), public.cancelar(text), public.sair(text) from public, authenticated;
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.geracao_iniciar(text), public.geracao_salvar(jsonb), public.geracao_falhou(text) to service_role;
+  end if;
+end $$;
 grant execute on function public.jogadores_publico(), public.reivindicar(smallint, text, text, text), public.entrar(smallint, text),
   public.painel(text), public.girar(text), public.regirar(text), public.recado(text, text, text),
   public.concluir(text, numeric), public.cancelar(text), public.sair(text) to anon;

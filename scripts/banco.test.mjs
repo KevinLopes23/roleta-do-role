@@ -201,6 +201,43 @@ test("a chave anon não lê tabelas nem chama helpers", async () => {
   }
 });
 
+test("busca de lugares: reserva, salva só lugares válidos e respeita o intervalo", async () => {
+  await reiniciarJogo();
+  await db.exec("update config set geracao_status = 'parado', geracao_em = null, geracao_msg = null; delete from lugares where id like 'novo-%' or id like 'pastel%'");
+  const { kevin } = await criarCasal();
+  await falha(rpc("geracao_iniciar", "token-falso"), "sessao_invalida");
+  const r = await rpc("geracao_iniciar", kevin);
+  assert.ok(r.existentes.length >= 4);
+  await falha(rpc("geracao_iniciar", kevin), "geracao_cedo");
+  assert.equal((await rpc("painel", kevin)).geracao.status, "gerando");
+  const salvo = await rpc("geracao_salvar", JSON.stringify([
+    { nome: "Pastelaria São João", cidade: "Bauru", distancia_km: "0", preco: "60", link: "https://exemplo.com" },
+    { nome: "Caro Demais", cidade: "Bauru", distancia_km: "0", preco: "900" },
+    { nome: "Longe Demais", cidade: "Ribeirão Preto", distancia_km: "200", preco: "100" },
+    { nome: "Sem Https", cidade: "Jaú", distancia_km: "50", preco: "80", link: "http://x.com" },
+    { nome: "Bem Barato", cidade: "Bauru", distancia_km: "0", preco: "40" },
+  ]));
+  assert.equal(salvo.novos, 3, "caro e longe ficam de fora; link http vira null");
+  const ze = (await db.query("select id, link from lugares where nome = 'Pastelaria São João'")).rows[0];
+  assert.equal(ze.id, "pastelaria-sao-joao-bauru");
+  assert.equal((await db.query("select link from lugares where nome = 'Sem Https'")).rows[0].link, null);
+  assert.equal((await rpc("geracao_salvar", JSON.stringify([{ nome: "Pastelaria São João", cidade: "Bauru", distancia_km: "0", preco: "60" }]))).novos, 0, "não duplica");
+  const p = await rpc("painel", kevin);
+  assert.equal(p.geracao.status, "parado");
+  assert.equal(p.geracao.pode, false, "6h de intervalo com a roleta cheia");
+  await db.exec("delete from lugares where nome in ('Pastelaria São João', 'Sem Https', 'Bem Barato')");
+});
+
+test("anon não chama as funções da busca de lugares", async () => {
+  await db.exec("set role anon");
+  try {
+    await falha(db.query("select geracao_salvar('[]'::jsonb)"), "permission denied");
+    await falha(db.query("select geracao_iniciar('x')"), "permission denied");
+  } finally {
+    await db.exec("reset role");
+  }
+});
+
 test("sair invalida o token", async () => {
   await reiniciarJogo();
   const { kevin } = await criarCasal();

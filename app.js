@@ -1,8 +1,8 @@
 // Roleta do Rolê — telas e fluxo. O banco decide tudo (sorteio, vez, segredo); aqui é só a experiência.
 // O ?v= força o celular a baixar a versão nova depois de cada publicação (o GitHub Pages guarda cache por 10 min).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=2";
-import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=2";
-import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=2";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=3";
+import { h, coracao, Roda, raspadinha, gangorra, confete, toast, folha, folhaAberta, tecladoPin, movimentoReduzido } from "./componentes.js?v=3";
+import { brl, lerValor, dataCurta, primeiroNome, mensagemErro } from "./util.js?v=3";
 
 const app = document.getElementById("app");
 const CHAVE_SESSAO = "roleta.sessao";
@@ -79,7 +79,7 @@ function telaAviso(titulo, texto, tentar) {
 }
 
 function telaEscolher(jogadores) {
-  const rotulo = (j) => (j.configurado ? primeiroNome(j.nome) : j.id === 1 ? "Kevin" : "Ela");
+  const rotulo = (j) => (j.configurado ? primeiroNome(j.nome) : j.id === 1 ? "Kevin" : "Mariana");
   const cartao = (j) => h("button", { class: "cartao-pessoa", type: "button", onclick: () => (j.configurado ? telaPin(j) : telaAtivar(j)) },
     h("span", { class: "inicial", "aria-hidden": "true" }, rotulo(j).charAt(0).toUpperCase()),
     h("span", { class: "nome" }, rotulo(j)),
@@ -114,7 +114,7 @@ const limparLink = () => { if (location.hash) history.replaceState(null, "", loc
 
 function telaAtivar(jogador) {
   const convite = h("input", { id: "convite", autocomplete: "off", autocapitalize: "none", spellcheck: "false", value: conviteDoLink(), placeholder: "vem no link que o Kevin mandou" });
-  const nome = h("input", { id: "nome", maxlength: "24", autocomplete: "nickname", value: jogador.id === 1 ? "Kevin" : "", placeholder: "Como você quer aparecer" });
+  const nome = h("input", { id: "nome", maxlength: "24", autocomplete: "nickname", value: jogador.id === 1 ? "Kevin" : "Mariana", placeholder: "Como você quer aparecer" });
   const aviso = h("p", { class: "aviso", role: "alert" });
   const avancar = (e) => {
     e.preventDefault();
@@ -181,11 +181,70 @@ function mostrarPainel(p, comTransicao = false) {
     p.minha_rodada && blocoRecado(p),
     blocoGastos(p),
     blocoHistorico(p),
+    blocoBusca(p),
     blocoRegras(),
-    h("p", { class: "rodape" }, `${p.disponiveis} lugares na roleta${p.pool_atualizado_em ? ` · atualizada em ${dataCurta(p.pool_atualizado_em)}` : ""}`),
   ].filter(Boolean).map((b, i) => (comTransicao ? entra(b, i) : b));
   const tela = h("section", { class: "tela" }, blocos);
   if (comTransicao) trocarTela(tela); else app.replaceChildren(tela);
+  acompanharBusca(p);
+}
+
+// ---------------------------------------------------------------- busca de lugares novos (Claude + pesquisa na web)
+
+const MINIMO_LUGARES = 10;
+const ACOMPANHA_MS = 10000;
+let autoTentado = false;
+let timerBusca = null;
+let statusAnterior = null;
+
+function blocoBusca(p) {
+  const g = p.geracao || {};
+  const buscando = g.status === "gerando";
+  const botao = h("button", { class: "btn", type: "button", disabled: buscando || !g.pode, onclick: () => buscarLugares(botao) },
+    buscando ? "Buscando…" : "Buscar lugares novos");
+  let texto;
+  if (buscando) texto = "O Claude está pesquisando lugares em Bauru e região. Leva uns 2 minutos.";
+  else if (!g.pode && g.liberada_em) texto = `Próxima busca liberada ${dataCurta(g.liberada_em)} às ${new Date(g.liberada_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.`;
+  else if (p.disponiveis < MINIMO_LUGARES) texto = "A roleta está acabando. A busca roda sozinha, mas você pode chamar agora.";
+  else texto = "Quando a roleta tiver menos de 10 lugares, a busca roda sozinha.";
+  return h("section", { class: "busca", "aria-label": "Lugares na roleta" },
+    h("div", { class: "busca-topo" },
+      h("p", { class: "busca-numero" }, h("b", {}, String(p.disponiveis)), " lugares na roleta"),
+      botao),
+    h("p", { class: "busca-texto" }, g.status === "erro" && g.msg ? g.msg : texto),
+    p.pool_atualizado_em && h("p", { class: "busca-texto fraco" }, `Atualizada em ${dataCurta(p.pool_atualizado_em)}${g.status === "parado" && g.msg ? ` · ${g.msg}` : ""}`));
+}
+
+async function buscarLugares(botao, automatico = false) {
+  if (botao) botao.disabled = true;
+  let resp;
+  try {
+    resp = await fetch(`${SUPABASE_URL}/functions/v1/gerar-lugares`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ token: est.sessao?.token }),
+    });
+  } catch {
+    if (!automatico) toast(mensagemErro("rede"), true);
+    return;
+  }
+  if (resp.status === 202) toast(automatico ? "A roleta estava acabando: buscando lugares novos…" : "Buscando lugares novos… leva uns 2 minutos.");
+  else if (!automatico) toast(resp.status === 429 ? "Já teve uma busca há pouco. Tenta mais tarde." : "Não deu pra buscar agora.", true);
+  atualizarSilencioso(true);
+}
+
+function acompanharBusca(p) {
+  const status = p.geracao?.status;
+  if (statusAnterior === "gerando" && status !== "gerando") {
+    toast(status === "erro" ? (p.geracao.msg || "A busca falhou.") : `${p.geracao.msg || "Roleta atualizada"} ♥`, status === "erro");
+  }
+  statusAnterior = status;
+  clearTimeout(timerBusca);
+  if (status === "gerando") timerBusca = setTimeout(() => atualizarSilencioso(true), ACOMPANHA_MS);
+  if (!autoTentado && p.geracao?.pode && p.disponiveis < MINIMO_LUGARES) {
+    autoTentado = true;
+    buscarLugares(null, true);
+  }
 }
 
 function blocoTopo() {
@@ -350,7 +409,7 @@ function blocoRegras() {
   return h("details", { class: "regras" },
     h("summary", {}, "Como funciona"),
     h("ol", {},
-      h("li", {}, "Antes de girar, o Kevin pede pro Claude atualizar a roleta com lugares novos e detalhados."),
+      h("li", {}, "Quando a roleta está acabando, o Claude pesquisa lugares novos sozinho (ou toque em “Buscar lugares novos”)."),
       h("li", {}, "Na sua vez, gire e raspe o bilhete. Só você vê o lugar."),
       h("li", {}, "Se não der (fechado, lotado), gire de novo até 2 vezes."),
       h("li", {}, "Deixe um recado no envelope: a dica de roupa e o horário."),
@@ -409,8 +468,11 @@ function podeAtualizar() {
   return !document.querySelector(".raspa:not(.some), .envelope.aberto, .roda-caixa.girando");
 }
 
-async function atualizarSilencioso() {
-  if (!podeAtualizar()) return;
+async function atualizarSilencioso(forcar = false) {
+  if (!podeAtualizar()) {
+    if (forcar && est.sessao?.token) { clearTimeout(timerBusca); timerBusca = setTimeout(() => atualizarSilencioso(true), ACOMPANHA_MS); }
+    return;
+  }
   try {
     const p = await comSessao("painel");
     if (JSON.stringify(p) !== est.assinatura && podeAtualizar()) mostrarPainel(p, true);

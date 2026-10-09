@@ -42,7 +42,7 @@ function gerarPrivado() {
   writeFileSync(arqConvite, convite + "\n");
   const sql = `insert into public.jogadores (id, nome, foto) values
   (1, 'Kevin', ${sqlTexto(foto("kevin.jpg"))}),
-  (2, 'Ela', ${sqlTexto(foto("ela.jpg"))})
+  (2, 'Mariana', ${sqlTexto(foto("ela.jpg"))})
 on conflict (id) do update set foto = excluded.foto;
 insert into public.config (id, convite_hash) values (1, extensions.crypt(${sqlTexto(convite)}, extensions.gen_salt('bf')))
 on conflict (id) do update set convite_hash = excluded.convite_hash;
