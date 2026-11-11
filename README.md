@@ -1,12 +1,28 @@
-# Roleta do Rolê
+<div align="center">
 
-Aplicação web para casais sortearem encontros surpresa em Bauru-SP e região. A cada rodada, um dos dois gira a roleta, recebe em segredo um lugar para levar o outro e, depois do encontro, registra quanto gastou. O sistema equilibra os gastos entre os dois ao longo do tempo.
+# 🎡 Roleta do Rolê
 
-**Produção:** https://kevinlopes23.github.io/roleta-do-role/
+**Roleta secreta de encontros para casais em Bauru-SP e região**
 
-![Telas da Roleta do Rolê: roleta, bilhete secreto, envelope com contagem regressiva e álbum](docs/telas.png)
+![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white)
+![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+[![Ver online](https://img.shields.io/badge/Ver_online-222?style=for-the-badge&logo=githubpages&logoColor=white)](https://kevinlopes23.github.io/roleta-do-role/)
 
-<sub>Capturas em modo de demonstração (`DEMO=1 node scripts/servidor-local.mjs`), sem dados reais.</sub>
+<br>
+
+<img src="docs/telas.png" alt="Telas da Roleta do Rolê: roleta, bilhete secreto, envelope com contagem regressiva e álbum" width="90%">
+
+<sub>Capturas em modo de demonstração (<code>DEMO=1 node scripts/servidor-local.mjs</code>), sem dados reais.</sub>
+
+</div>
+
+## 💡 Sobre
+
+Aplicação web para casais sortearem encontros surpresa em Bauru-SP e região. A cada rodada, um dos dois gira a roleta, recebe em segredo um lugar para levar o outro e, depois do encontro, registra quanto gastou. O sistema equilibra os gastos entre os dois ao longo do tempo. Acesso restrito aos dois jogadores (PIN + convite).
 
 ---
 
@@ -261,3 +277,7 @@ Alterações no banco são feitas reaplicando `supabase/schema.sql`, que é idem
 | `node scripts/db.mjs consulta "<sql>"` | Executa uma consulta e imprime o resultado. |
 | `node scripts/gerar-seeds.mjs lugares <arquivo.json>` | Gera o SQL de *upsert* dos lugares. |
 | `node scripts/gerar-seeds.mjs privado` | Gera o seed privado (fotos e convite). |
+
+## 👤 Autor
+
+Feito por [Kevin Lopes](https://github.com/KevinLopes23)
